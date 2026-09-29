@@ -175,21 +175,42 @@ function getPropertyBackground(tier, category, seed) {
   return gradients[(tier + seed) % gradients.length];
 }
 
+// Deliberately weighted ~60% negative / 40% positive so Chance cards feel like real
+// unavoidable life expenses (mandatory once drawn) rather than a free-money lottery.
 function createChanceDeck() {
   return [
-    { id: 'chance-1', name: 'Market Boom', type: 'INSTANT', effect: 'market-bonus', description: 'All owned properties increase 5%.', value: 5 },
-    { id: 'chance-2', name: 'Market Downturn', type: 'INSTANT', effect: 'market-drop', description: 'All properties drop 5%.', value: -5 },
-    { id: 'chance-3', name: 'Maintenance Bill', type: 'INSTANT', effect: 'cash-out', amount: 250, description: 'Pay £250.' },
-    { id: 'chance-4', name: 'Tax Refund', type: 'INSTANT', effect: 'cash-in', amount: 400, description: 'Receive £400.' },
-    { id: 'chance-5', name: 'Insurance', type: 'KEEP', effect: 'insurance', description: 'Cancel one future negative property event.' },
-    { id: 'chance-6', name: 'Rent Booster', type: 'PLAY', effect: 'rent-booster', description: 'Choose one property and collect 2x next month.', target: 'property' },
-    { id: 'chance-7', name: 'Renovation Grant', type: 'PLAY', effect: 'renovation', description: 'Increase one property value by 10%.', target: 'property' },
-    { id: 'chance-8', name: 'Freeze', type: 'KEEP', effect: 'freeze', description: 'Prevent one opponent from collecting rent from you once.' },
-    { id: 'chance-9', name: 'Community Regeneration', type: 'INSTANT', effect: 'community', description: 'All commercial properties gain 8%.', value: 8 },
-    { id: 'chance-10', name: 'Emergency Expense', type: 'INSTANT', effect: 'cash-out', amount: 300, description: 'Pay £300.' },
-    { id: 'chance-11', name: 'Shared Growth', type: 'INSTANT', effect: 'market-bonus', value: 4, description: 'Local market sentiment improves.' },
-    { id: 'chance-12', name: 'Bumper Rent', type: 'PLAY', effect: 'rent-booster', description: 'A lucky tenant pays double rent on one property.', target: 'property' }
+    // --- Negative / mandatory expense cards (12 of 20 = 60%) ---
+    { id: 'chance-1', name: "Son's Birthday Party", type: 'INSTANT', effect: 'cash-out', amount: 150, description: "Pay £150 for your son's birthday party." },
+    { id: 'chance-2', name: 'Car MOT Failure', type: 'INSTANT', effect: 'cash-out', amount: 220, description: 'Your car failed its MOT. Pay £220 for repairs.' },
+    { id: 'chance-3', name: 'Emergency Plumber', type: 'INSTANT', effect: 'cash-out', amount: 310, description: 'A burst pipe needs an emergency callout. Pay £310.' },
+    { id: 'chance-4', name: 'Vet Bill', type: 'INSTANT', effect: 'cash-out', amount: 140, description: 'The family dog needs treatment. Pay £140.' },
+    { id: 'chance-5', name: 'Parking Fine', type: 'INSTANT', effect: 'cash-out', amount: 75, description: 'You got a parking ticket. Pay £75.' },
+    { id: 'chance-6', name: 'Speeding Fine', type: 'INSTANT', effect: 'cash-out', amount: 160, description: 'Caught by a speed camera. Pay £160.' },
+    { id: 'chance-7', name: 'Boiler Breakdown', type: 'INSTANT', effect: 'cash-out', amount: 275, description: 'Your boiler has broken down. Pay £275 for a callout.' },
+    { id: 'chance-8', name: 'Surprise Tax Bill', type: 'INSTANT', effect: 'cash-out', amount: 300, description: 'HMRC says you owe more than expected. Pay £300.' },
+    { id: 'chance-9', name: 'Wedding Gift', type: 'INSTANT', effect: 'cash-out', amount: 120, description: "A friend's wedding is coming up. Pay £120 for a gift." },
+    { id: 'chance-10', name: 'School Trip Costs', type: 'INSTANT', effect: 'cash-out', amount: 95, description: 'Your kids need paying in for a school trip. Pay £95.' },
+    { id: 'chance-11', name: 'Phone Screen Repair', type: 'INSTANT', effect: 'cash-out', amount: 180, description: 'You cracked your phone screen. Pay £180 to fix it.' },
+    { id: 'chance-12', name: 'Market Downturn', type: 'INSTANT', effect: 'market-drop', description: 'All your properties drop 5% in value.', value: -5 },
+    // --- Positive cards (8 of 20 = 40%) ---
+    { id: 'chance-13', name: 'Market Boom', type: 'INSTANT', effect: 'market-bonus', description: 'All owned properties increase 5%.', value: 5 },
+    { id: 'chance-14', name: 'Tax Refund', type: 'INSTANT', effect: 'cash-in', amount: 400, description: 'Receive £400.' },
+    { id: 'chance-15', name: 'Insurance', type: 'KEEP', effect: 'insurance', description: 'Cancel one future negative property event.' },
+    { id: 'chance-16', name: 'Rent Booster', type: 'PLAY', effect: 'rent-booster', description: 'Choose one property and collect 2x next month.', target: 'property' },
+    { id: 'chance-17', name: 'Renovation Grant', type: 'PLAY', effect: 'renovation', description: 'Increase one property value by 10%.', target: 'property' },
+    { id: 'chance-18', name: 'Freeze', type: 'KEEP', effect: 'freeze', description: 'Prevent one opponent from collecting rent from you once.' },
+    { id: 'chance-19', name: 'Community Regeneration', type: 'INSTANT', effect: 'community', description: 'All commercial properties gain 8%.', value: 8 },
+    { id: 'chance-20', name: 'Bumper Rent', type: 'PLAY', effect: 'rent-booster', description: 'A lucky tenant pays double rent on one property.', target: 'property' }
   ];
+}
+
+// Draws one card from the shared chance deck, reshuffling in a fresh deck if it runs dry
+// (chance cards are now guaranteed every month, so the original 12-card deck would empty fast).
+function drawChanceCard() {
+  if (!state.game.chanceDeck || !state.game.chanceDeck.length) {
+    state.game.chanceDeck = shuffleArray(createChanceDeck());
+  }
+  return state.game.chanceDeck.shift();
 }
 
 function createImpulseAssets() {
@@ -217,6 +238,7 @@ function buildDefaultGame(profile) {
     impulseAssets: [],
     savedCards: [],
     isHuman: true,
+    isBankrupt: false,
     netWorthAtMonthStart: 5000,
     roundDeltas: [],
     stats: { rentCollected: 0, moneySpent: 0, propertiesBought: 0, offersCompleted: 0, netWorth: 5000 }
@@ -243,6 +265,7 @@ function buildDefaultGame(profile) {
       impulseAssets: [],
       savedCards: [],
       isHuman: false,
+      isBankrupt: false,
       netWorthAtMonthStart: 5000,
       roundDeltas: [],
       difficulty: 'normal',
@@ -755,6 +778,10 @@ function renderAll() {
   renderLeaderboard();
   renderSettings();
   renderNav();
+  const human = state.game?.players?.find((p) => p.isHuman);
+  if (human?.isBankrupt && !document.getElementById('bankrupt-restart-btn')) {
+    showBankruptcyModal(human);
+  }
 }
 
 function renderNav() {
@@ -933,6 +960,10 @@ function generateTurnDeck() {
   }
   cards.push({ type: 'dice' });
   cards.push({ type: 'impulse' });
+  // Guarantee at least one real-life expense/event card every month instead of leaving it
+  // to a rare 25%-chance dice-roll branch — makes financial risk a regular occurrence.
+  const chanceCard = drawChanceCard();
+  if (chanceCard) cards.push({ type: 'chance', chanceCard });
   cards.forEach((card) => trackCardDraw(card.type));
   return shuffleArray(cards);
 }
@@ -1213,7 +1244,7 @@ function handleYourTurnClick() {
 // Gives each AI opponent one simple action for the round and narrates it via a persistent
 // log (shown until the player taps "Your Turn!") as well as toasts/activity.
 function simulateOpponents() {
-  const opponents = state.game.players.filter((player) => !player.isHuman);
+  const opponents = state.game.players.filter((player) => !player.isHuman && !player.isBankrupt);
   const availableProperties = state.game.properties.filter((property) => property.ownerId === null);
   const log = [];
 
@@ -1249,6 +1280,7 @@ function simulateOpponents() {
         state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
         log.push({ icon: '💸', text });
         showToast(`${opponent.name.toUpperCase()} PAID RENT TO ${owner.name.toUpperCase()}`);
+        handleCashShortfall(opponent);
         return;
       }
     }
@@ -1591,6 +1623,7 @@ function resolveDiceRoll(card) {
       owner.cash += rentDue;
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
       showToast(`YOU ROLLED ${roll} • RENT!`);
+      handleCashShortfall(player);
     }
   } else {
     const choice = Math.random() > 0.5 ? 'chance' : 'properties';
@@ -1615,6 +1648,7 @@ function applyChanceEffect(card, player) {
   if (card.effect === 'cash-out') {
     player.cash -= card.amount;
     showToast(`-${formatMoney(card.amount)}`);
+    handleCashShortfall(player);
   }
   if (card.type === 'KEEP') {
     player.savedCards.push(card);
@@ -1637,12 +1671,8 @@ function applyChanceEffect(card, player) {
 
 // Inserts a real, swipeable Chance card into the deck instead of resolving it instantly.
 function appendChanceCard() {
-  const deck = state.game.chanceDeck;
-  if (!deck.length) {
-    showToast('No chance cards left.');
-    return;
-  }
-  const chanceCard = deck.shift();
+  const chanceCard = drawChanceCard();
+  if (!chanceCard) return;
   const insertAt = (state.game.turnIndex || 0) + 1;
   state.turnDeckCards.splice(insertAt, 0, { type: 'chance', chanceCard });
   trackCardDraw('chance');
@@ -1939,6 +1969,66 @@ function sellProperty(propertyId) {
   renderAll();
 }
 
+// Called after any involuntary cash deduction (rent, Chance expense) so debt has a real
+// consequence: force-sell impulse buys, then properties at a distress discount, and if
+// that still isn't enough, the player goes bankrupt.
+function handleCashShortfall(player) {
+  if (!player || player.isBankrupt || player.cash >= 0) return;
+
+  while (player.cash < 0 && player.impulseAssets.length) {
+    const asset = player.impulseAssets.reduce((worst, item) => (!worst || item.currentValue < worst.currentValue ? item : worst), null);
+    player.impulseAssets = player.impulseAssets.filter((item) => item.id !== asset.id);
+    const saleValue = Math.round(asset.currentValue * 0.6);
+    player.cash += saleValue;
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} fire-sold ${asset.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: 'now', color: COLORS[player.color] });
+  }
+
+  while (player.cash < 0 && player.properties.length) {
+    const propertyId = player.properties.reduce((cheapestId, id) => {
+      const candidate = getPropertyById(id);
+      const cheapest = getPropertyById(cheapestId);
+      return !cheapest || (candidate && candidate.currentValue < cheapest.currentValue) ? id : cheapestId;
+    }, player.properties[0]);
+    const property = getPropertyById(propertyId);
+    if (!property) break;
+    const saleValue = Math.round(property.currentValue * 0.7);
+    player.cash += saleValue;
+    property.ownerId = null;
+    player.properties = player.properties.filter((id) => id !== propertyId);
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} force-sold ${property.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: 'now', color: COLORS[player.color] });
+  }
+
+  if (player.cash < 0) {
+    player.isBankrupt = true;
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} has gone BANKRUPT!`, icon: '💀', time: 'now', color: COLORS[player.color] });
+    if (player.isHuman) {
+      showBankruptcyModal(player);
+    } else {
+      showToast(`${player.name.toUpperCase()} WENT BANKRUPT`);
+    }
+  }
+  saveState();
+}
+
+// Blocking game-over screen for the human player — no close button, only "Start Over".
+function showBankruptcyModal(player) {
+  const modal = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="top"><strong>💀 Bankrupt!</strong></div>
+        <div class="modal-body">
+          <div class="desc">${player.name}, you've sold everything you own and you're still ${formatMoney(Math.abs(player.cash))} in debt. Your Property Tycoon journey ends here.</div>
+          <div class="turn-actions" style="margin-top: 14px;">
+            <button class="buy-btn" id="bankrupt-restart-btn">Start Over</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-root').innerHTML = modal;
+  document.getElementById('bankrupt-restart-btn').addEventListener('click', resetGame);
+}
+
 function renderLeaderboard() {
   const leaderboard = document.getElementById('view-leaderboard');
   if (!state.game) {
@@ -1975,8 +2065,8 @@ function renderLeaderboard() {
             <div class="player-mini">
               <div class="avatar" style="background:${COLORS[player.color]};">${AVATARS[0]}</div>
               <div>
-                <strong>${player.name}</strong>
-                <div class="sub">${player.properties.length} props</div>
+                <strong>${player.name}${player.isBankrupt ? ' 💀' : ''}</strong>
+                <div class="sub">${player.isBankrupt ? 'Bankrupt' : `${player.properties.length} props`}</div>
               </div>
             </div>
             <strong>${formatMoney(getPlayerNetWorth(player))}</strong>
