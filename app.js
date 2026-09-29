@@ -265,6 +265,8 @@ function buildDefaultGame(profile) {
     color: profile.color || 'blue',
     cash: 5000,
     happiness: 20,
+    happinessLog: [],
+    tookActionThisTurn: false,
     properties: [],
     impulseAssets: [],
     savedCards: [],
@@ -292,6 +294,7 @@ function buildDefaultGame(profile) {
       color: aiColors[(i + 1) % aiColors.length],
       cash: 5000,
       happiness: 20 + (Math.random() * 10),
+      happinessLog: [],
       properties: [],
       impulseAssets: [],
       savedCards: [],
@@ -329,6 +332,7 @@ function buildDefaultGame(profile) {
     turnCompleted: false,
     opponentsSimulated: false,
     lastSimulationLog: [],
+    simRevealCount: 0,
     cardDrawCounts: { property: 0, dice: 0, impulse: 0, chance: 0 },
     gameStarted: true,
     settings: { difficulty: 'normal', noLocalProperties: 50 }
@@ -382,7 +386,8 @@ const state = {
     modal: null,
     passScreen: false,
     portfolioShowAll: false,
-    portfolioTab: 'properties'
+    portfolioTab: 'properties',
+    statsShowCash: false
   },
   game: null,
   turnDeckCards: []
@@ -965,20 +970,52 @@ function getPlayerNetWorth(player) {
   return player.cash + propertyValue + impulseValue;
 }
 
-// Happier landlords collect better rent — up to +20% at 100% happiness.
-function getHappinessRentMultiplier(player) {
-  return 1 + (clamp(Number(player?.happiness || 0), 0, 100) / 100) * 0.2;
+// Leaderboard ranking score: cash + property value (boosted by upgrade level, since upgrades
+// add real value the plain currentValue doesn't reflect) + impulse buys + a £ value for the
+// happiness rent bonus/penalty, so it's a true "overall" score rather than just liquid cash.
+function getPlayerOverallScore(player) {
+  const propertyValue = (player.properties || []).reduce((total, propertyId) => {
+    const property = getPropertyById(propertyId);
+    if (!property) return total;
+    const upgradeBonus = property.currentValue * ((property.upgradeLevel || 0) * 0.18);
+    return total + property.currentValue + upgradeBonus;
+  }, 0);
+  const impulseValue = (player.impulseAssets || []).reduce((total, asset) => total + (asset.currentValue || asset.resale || asset.price), 0);
+  const happinessBonus = getPlayerRent(player) - getPlayerBaseRent(player);
+  return Math.round(player.cash + propertyValue + impulseValue + happinessBonus);
 }
 
-// Quick visual read on mood for the Home screen's Happiness display.
+// Happiness now swings from -100 (miserable) to +100 (thrilled). At +100 tenants pay 50% more
+// rent; at -100 they pay 50% less — 0 happiness is the neutral baseline.
+function getHappinessRentMultiplier(player) {
+  return 1 + (clamp(Number(player?.happiness || 0), -100, 100) / 100) * 0.5;
+}
+
+// Centralises every happiness change so we can keep a log of what caused it (shown when the
+// player taps the Happiness stat on Home) and keep the -100..100 clamp consistent everywhere.
+function adjustHappiness(player, amount, reason) {
+  if (!player || !amount) return;
+  const before = clamp(Number(player.happiness || 0), -100, 100);
+  const after = clamp(before + amount, -100, 100);
+  const actualDelta = Math.round((after - before) * 10) / 10;
+  player.happiness = after;
+  if (actualDelta === 0) return;
+  if (!player.happinessLog) player.happinessLog = [];
+  player.happinessLog.unshift({ id: uid('hlog'), text: reason, amount: actualDelta, time: 'now' });
+  player.happinessLog = player.happinessLog.slice(0, 20);
+}
+
+// Quick visual read on mood for the Home screen's Happiness display, across the full
+// -100..100 range.
 function getHappinessEmoji(happiness) {
-  const value = clamp(Number(happiness || 0), 0, 100);
+  const value = clamp(Number(happiness || 0), -100, 100);
   if (value >= 90) return '🤩';
   if (value >= 70) return '😄';
-  if (value >= 50) return '🙂';
-  if (value >= 30) return '😐';
-  if (value >= 15) return '😟';
-  return '😢';
+  if (value >= 40) return '🙂';
+  if (value >= 10) return '😐';
+  if (value >= -20) return '😟';
+  if (value >= -60) return '😢';
+  return '😡';
 }
 
 const MAX_UPGRADE_LEVEL = 5;
@@ -1027,7 +1064,11 @@ function renderHome() {
   const player = getCurrentPlayer();
   const props = player.properties.length;
   const rent = getPlayerRent(player);
-  const happiness = Math.min(player.happiness || 20, 100);
+  const happiness = clamp(Number.isFinite(player.happiness) ? player.happiness : 20, -100, 100);
+  const rentMultiplier = getHappinessRentMultiplier(player);
+  const rentPct = Math.round((rentMultiplier - 1) * 100);
+  const rentBonusAmount = rent - getPlayerBaseRent(player);
+  const happinessMood = rentPct > 0 ? 'gain-text' : rentPct < 0 ? 'loss-text' : '';
   const netWorth = getPlayerNetWorth(player);
   const baseline = Number.isFinite(player.netWorthAtMonthStart) ? player.netWorthAtMonthStart : netWorth;
   const delta = netWorth - baseline;
@@ -1069,15 +1110,19 @@ function renderHome() {
           <div class="kicker">Est. monthly rent</div>
           <strong>${formatMoney(rent)}</strong>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="home-happiness-card" style="cursor:pointer;">
           <div class="kicker">Happiness</div>
           <strong>${getHappinessEmoji(happiness)} ${Math.round(happiness)}%</strong>
         </div>
       </div>
 
-      <div class="happiness-wrap">
-        <div class="happiness-header"><span>${getHappinessEmoji(happiness)} Happiness <small>(+${Math.round((getHappinessRentMultiplier(player) - 1) * 100)}% rent)</small></span><strong>${Math.round(happiness)}%</strong></div>
-        <div class="happiness-bar"><span style="width:${happiness}%"></span></div>
+      <div class="happiness-wrap" id="home-happiness-wrap" style="cursor:pointer;">
+        <div class="happiness-header">
+          <span>${getHappinessEmoji(happiness)} Happiness <small class="${happinessMood}">(${rentPct >= 0 ? '+' : ''}${rentPct}% rent${rentBonusAmount ? `, ${rentBonusAmount >= 0 ? '+' : '−'}${formatMoney(Math.abs(rentBonusAmount))}/mo` : ''})</small></span>
+          <strong>${Math.round(happiness)}%</strong>
+        </div>
+        <div class="happiness-bar"><span class="${happiness < 0 ? 'negative' : ''}" style="width:${(happiness + 100) / 2}%"></span></div>
+        <div class="happiness-tap-hint">Tap to see what's affecting your happiness</div>
       </div>
     </div>
 
@@ -1110,15 +1155,50 @@ function renderHome() {
 
   const turnButton = home.querySelector('[data-view="turn"]');
   if (turnButton) turnButton.addEventListener('click', () => setView('turn'));
+  document.getElementById('home-happiness-card')?.addEventListener('click', openHappinessLog);
+  document.getElementById('home-happiness-wrap')?.addEventListener('click', openHappinessLog);
   animateMoneyNumbers();
 }
 
+// Shows the recent events that raised/lowered the current player's happiness, and by how
+// much, so the "why did my rent change" question always has a visible answer.
+function openHappinessLog() {
+  const player = getCurrentPlayer();
+  const log = (player.happinessLog || []).slice(0, 12);
+  const modal = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="top"><strong>${getHappinessEmoji(player.happiness)} Happiness — ${Math.round(clamp(player.happiness || 0, -100, 100))}%</strong><button type="button" class="ghost-btn" data-close-modal="true">Close</button></div>
+        <div class="modal-body">
+          <div class="desc" style="margin-bottom:10px;">Happiness swings your rent income from −50% (at −100%) to +50% (at +100%). Buying, investing, upgrading, and collecting rent all help; sitting out a month hurts.</div>
+          <div class="stat-list">
+            ${log.length ? log.map((entry) => `
+              <div class="stat-list-row">
+                <span>${entry.text}</span>
+                <strong class="${entry.amount >= 0 ? 'gain-text' : 'loss-text'}">${entry.amount >= 0 ? '+' : ''}${entry.amount}%</strong>
+              </div>
+            `).join('') : '<div class="empty-state">Nothing has affected your happiness yet.</div>'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-root').innerHTML = modal;
+  document.querySelector('[data-close-modal]')?.addEventListener('click', () => { document.getElementById('modal-root').innerHTML = ''; });
+}
+
 function getPlayerRent(player) {
-  const totalRent = (player.properties || []).reduce((total, propertyId) => {
+  return Math.round(getPlayerBaseRent(player) * getHappinessRentMultiplier(player));
+}
+
+// Rent total with NO happiness multiplier applied — used to work out the £ size of the
+// happiness bonus/penalty (getPlayerRent - getPlayerBaseRent) for the leaderboard score and
+// the Home screen's "happiness affects your rent by £X" readout.
+function getPlayerBaseRent(player) {
+  return (player.properties || []).reduce((total, propertyId) => {
     const property = getPropertyById(propertyId);
     return total + (property ? getEffectiveRent(property) : 0);
   }, 0);
-  return Math.round(totalRent * getHappinessRentMultiplier(player));
 }
 
 function animateMoneyNumbers() {
@@ -1251,21 +1331,24 @@ function renderTurn() {
 function renderTurnCompleteScreen(turn) {
   const simulated = Boolean(state.game.opponentsSimulated);
   const log = state.game.lastSimulationLog || [];
+  const revealCount = simulated ? clamp(state.game.simRevealCount || 0, 0, log.length) : 0;
+  const allRevealed = simulated && revealCount >= log.length;
   turn.innerHTML = `
     <div class="turn-complete-screen">
       <div class="complete-icon">🎉</div>
       <h2>Turn Complete!</h2>
       ${simulated ? `
         <p>Here's what happened while you were away:</p>
-        <div class="sim-log">
-          ${log.length ? log.map((entry) => `
-            <div class="sim-log-item">
+        <div class="sim-log" id="sim-log-root">
+          ${log.slice(0, revealCount).map((entry) => `
+            <div class="sim-log-item sim-log-visible">
               <div class="sim-log-icon">${entry.icon}</div>
               <div class="sim-log-text">${entry.text}</div>
             </div>
-          `).join('') : '<div class="empty-state">No opponent activity this round.</div>'}
+          `).join('')}
+          ${log.length === 0 ? '<div class="empty-state">No opponent activity this round.</div>' : ''}
         </div>
-        <button class="primary-btn" id="your-turn-btn">Your Turn!</button>
+        <button class="primary-btn ${allRevealed ? '' : 'hidden'}" id="your-turn-btn">Your Turn!</button>
       ` : `
         <p>You've been through every card for Month ${state.game.month}.</p>
         <button class="primary-btn" id="simulate-btn">Simulate Opponents' Turn</button>
@@ -1274,10 +1357,40 @@ function renderTurnCompleteScreen(turn) {
   `;
   document.getElementById('simulate-btn')?.addEventListener('click', handleSimulateClick);
   document.getElementById('your-turn-btn')?.addEventListener('click', handleYourTurnClick);
+  if (simulated && !allRevealed) revealSimulationLogSequentially();
+}
+
+// Reveals each opponent-activity card one at a time (1s apart, with a fade/slide-in
+// transition) instead of dumping the whole log on screen at once. Resumable: if some other
+// render wipes the appended DOM mid-sequence, `simRevealCount` remembers how far we got.
+function revealSimulationLogSequentially() {
+  const log = state.game.lastSimulationLog || [];
+  function revealNext() {
+    const container = document.getElementById('sim-log-root');
+    if (!container) return; // player navigated away — stop the sequence
+    const i = state.game.simRevealCount || 0;
+    if (i >= log.length) {
+      document.getElementById('your-turn-btn')?.classList.remove('hidden');
+      return;
+    }
+    const entry = log[i];
+    container.querySelector('.empty-state')?.remove();
+    const item = document.createElement('div');
+    item.className = 'sim-log-item sim-log-enter';
+    item.innerHTML = `<div class="sim-log-icon">${entry.icon}</div><div class="sim-log-text">${entry.text}</div>`;
+    container.appendChild(item);
+    requestAnimationFrame(() => requestAnimationFrame(() => item.classList.add('sim-log-visible')));
+    state.game.simRevealCount = i + 1;
+    saveState();
+    setTimeout(revealNext, 1000);
+  }
+  revealNext();
 }
 
 function handleSimulateClick() {
   simulateOpponents();
+  state.game.simRevealCount = 0;
+  saveState();
   // Keep the results on screen — the player only moves on once they click "Your Turn!".
   renderTurn();
 }
@@ -1293,12 +1406,20 @@ function handleYourTurnClick() {
     p.netWorthAtMonthStart = netWorth;
   });
 
+  // Happiness dips if you went a whole month without buying, investing, or upgrading anything.
+  const human = state.game.players.find((p) => p.isHuman);
+  if (human && !human.tookActionThisTurn) {
+    adjustHappiness(human, -8, 'No investment activity this month');
+  }
+  state.game.players.forEach((p) => { p.tookActionThisTurn = false; });
+
   state.game.month += 1;
   state.turnDeckCards = generateTurnDeck();
   state.game.turnIndex = 0;
   state.game.turnCompleted = false;
   state.game.opponentsSimulated = false;
   state.game.lastSimulationLog = [];
+  state.game.simRevealCount = 0;
   lastSpokenTurnIndex = -1;
   saveState();
   setView('home');
@@ -1323,6 +1444,7 @@ function simulateOpponents() {
         choice.ownerId = opponent.id;
         opponent.properties.push(choice.id);
         availableProperties.splice(availableProperties.indexOf(choice), 1);
+        adjustHappiness(opponent, 2, `Invested in ${choice.name}`);
         const text = `${opponent.name} bought ${choice.name} for ${formatMoney(choice.purchasePrice)}`;
         state.game.activity.unshift({ id: uid('act'), text, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
         log.push({ icon: '🏠', text });
@@ -1340,6 +1462,7 @@ function simulateOpponents() {
         const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner));
         opponent.cash -= rentDue;
         owner.cash += rentDue;
+        adjustHappiness(owner, 3, `Received rent from ${opponent.name}`);
         const text = `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`;
         state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
         log.push({ icon: '💸', text });
@@ -1354,13 +1477,14 @@ function simulateOpponents() {
     if (opponent.cash >= asset.price) {
       opponent.cash -= asset.price;
       opponent.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
-      opponent.happiness = clamp(Number(opponent.happiness || 20) + asset.popularity, 0, 100);
+      adjustHappiness(opponent, asset.popularity, `Bought ${asset.name}`);
       const text = `${opponent.name} bought ${asset.name}`;
       state.game.activity.unshift({ id: uid('act'), text, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
       log.push({ icon: '🛍️', text });
       showToast(`${opponent.name.toUpperCase()} BOUGHT ${asset.name.toUpperCase()}`);
     } else {
       const text = `${opponent.name} sat this month out`;
+      adjustHappiness(opponent, -8, 'Sat out this month');
       state.game.activity.unshift({ id: uid('act'), text, icon: '💤', time: 'now', color: COLORS[opponent.color] });
       log.push({ icon: '💤', text });
       showToast(`${opponent.name.toUpperCase()} SAT THIS MONTH OUT`);
@@ -1675,6 +1799,8 @@ function buyPropertyFromTurn(propertyId) {
   player.cash -= property.purchasePrice;
   property.ownerId = player.id;
   player.properties.push(property.id);
+  player.tookActionThisTurn = true;
+  adjustHappiness(player, 2, `Invested in ${property.name}`);
   state.game.activity.unshift({
     id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: 'now', color: COLORS[player.color]
   });
@@ -1697,7 +1823,8 @@ function buyImpulseAsset(assetId) {
   }
   player.cash -= asset.price;
   player.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
-  player.happiness = clamp(Number(player.happiness || 20) + asset.popularity, 0, 100);
+  player.tookActionThisTurn = true;
+  adjustHappiness(player, asset.popularity, `Bought ${asset.name}`);
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[player.color] });
   showToast(`HAPPINESS +${asset.popularity}%`);
   haptic('soft');
@@ -1723,6 +1850,7 @@ function resolveDiceRoll(card) {
       const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner));
       player.cash -= rentDue;
       owner.cash += rentDue;
+      adjustHappiness(owner, 3, `Received rent from ${player.name}`);
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
       showToast(`YOU ROLLED ${roll} • RENT!`);
       handleCashShortfall(player);
@@ -1910,13 +2038,13 @@ function renderOwnedPortfolioItem(property) {
         <div class="upgrade-row">
           <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
           ${nextCost != null
-            ? `<button class="pill-btn" data-upgrade-property="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+            ? `<button class="danger-btn pill-btn" data-upgrade-property="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
             : '<span class="maxed-badge">MAX LEVEL</span>'}
         </div>
       </div>
       <div class="item-actions">
         <button class="ghost-btn" data-property-detail="${property.id}">View</button>
-        <button class="pill-btn" data-sell-property="${property.id}">Sell</button>
+        <button class="danger-btn pill-btn" data-sell-property="${property.id}">Sell</button>
       </div>
     </div>
   `;
@@ -1955,6 +2083,8 @@ function upgradeProperty(propertyId) {
   }
   player.cash -= cost;
   property.upgradeLevel = level + 1;
+  player.tookActionThisTurn = true;
+  adjustHappiness(player, 3, `Upgraded ${property.name}`);
   const label = property.upgradeLevel >= MAX_UPGRADE_LEVEL ? 'a Hotel' : `Level ${property.upgradeLevel}`;
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: 'now', color: COLORS[player.color] });
   showToast(`UPGRADED TO ${label.toUpperCase()}`);
@@ -1997,6 +2127,7 @@ function openPropertyDetail(propertyId) {
   const player = getCurrentPlayer();
   const level = property.upgradeLevel || 0;
   const nextCost = level < MAX_UPGRADE_LEVEL ? getUpgradeCost(property, level + 1) : null;
+  const saleValue = Math.round(property.currentValue * 0.88);
   const modal = `
     <div class="modal-backdrop">
       <div class="modal-card">
@@ -2014,13 +2145,14 @@ function openPropertyDetail(propertyId) {
           <div class="upgrade-row" style="margin-top:12px;">
             <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
             ${nextCost != null
-              ? `<button class="pill-btn" data-action="property-upgrade" data-id="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+              ? `<button class="danger-btn pill-btn" data-action="property-upgrade" data-id="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
               : '<span class="maxed-badge">MAX LEVEL</span>'}
           </div>
           <div class="desc" style="margin-top: 12px;">${property.description}</div>
-          <div class="turn-actions" style="margin-top: 14px;">
-            <button class="buy-btn" data-action="property-sell" data-id="${property.id}">Sell</button>
-            <button class="skip-btn" data-action="property-offer" data-id="${property.id}">Make Offer</button>
+          <!-- This is always the player's own property (opened from Portfolio), so only
+               Upgrade/Sell make sense here — no "Make Offer" on something you already own. -->
+          <div class="turn-actions single-action" style="margin-top: 14px;">
+            <button class="danger-btn" data-action="property-sell" data-id="${property.id}">Sell for ${formatMoney(saleValue)}</button>
           </div>
         </div>
       </div>
@@ -2029,56 +2161,8 @@ function openPropertyDetail(propertyId) {
   document.getElementById('modal-root').innerHTML = modal;
   const close = document.querySelector('[data-close-modal]');
   if (close) close.addEventListener('click', () => document.getElementById('modal-root').innerHTML = '');
-  document.querySelector('[data-action="property-sell"]')?.addEventListener('click', () => sellProperty(property.id));
-  document.querySelector('[data-action="property-offer"]')?.addEventListener('click', () => openOfferBuilder(property.id));
+  document.querySelector('[data-action="property-sell"]')?.addEventListener('click', () => { sellProperty(property.id); document.getElementById('modal-root').innerHTML = ''; });
   document.querySelector('[data-action="property-upgrade"]')?.addEventListener('click', () => { upgradeProperty(property.id); document.getElementById('modal-root').innerHTML = ''; });
-}
-
-function openOfferBuilder(propertyId) {
-  const property = getPropertyById(propertyId);
-  const currentPlayer = getCurrentPlayer();
-  const vendor = state.game.players.find((p) => p.id === property.ownerId) || state.game.players[1];
-  const modal = `
-    <div class="modal-backdrop">
-      <div class="modal-card">
-        <div class="top"><strong>Make Offer</strong><button type="button" class="ghost-btn" data-close-modal="true">Close</button></div>
-        <div class="modal-body">
-          <div class="offer-builder">
-            <div class="card-top"><div class="tier-badge" style="background:${property.tierColor};">${property.tierLabel}</div></div>
-            <h4>${property.name}</h4>
-            <div class="meta"><span>Owner: ${vendor.name}</span><span>${property.area}</span></div>
-            <div class="amount-row">
-              <div>Offer amount</div>
-              <div class="amount-controls">
-                <button type="button" data-decrease-offer="1">−</button>
-                <strong id="offer-value">£2,000</strong>
-                <button type="button" data-increase-offer="1">+</button>
-              </div>
-            </div>
-            <div class="desc">Your cash after offer: ${formatMoney(currentPlayer.cash - 2000)}</div>
-            <div class="turn-actions">
-              <button class="buy-btn" data-submit-offer="${property.id}">Send Offer</button>
-              <button class="skip-btn" data-close-modal="true">Cancel</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  document.getElementById('modal-root').innerHTML = modal;
-  document.querySelector('[data-close-modal]').addEventListener('click', () => document.getElementById('modal-root').innerHTML = '');
-  document.querySelector('[data-decrease-offer]').addEventListener('click', () => {
-    const value = 2000;
-    document.getElementById('offer-value').textContent = formatMoney(Math.max(500, value - 500));
-  });
-  document.querySelector('[data-increase-offer]').addEventListener('click', () => {
-    const value = 2000;
-    document.getElementById('offer-value').textContent = formatMoney(value + 500);
-  });
-  document.querySelector('[data-submit-offer]').addEventListener('click', () => {
-    showToast('Offer sent');
-    document.getElementById('modal-root').innerHTML = '';
-  });
 }
 
 function sellProperty(propertyId) {
@@ -2162,7 +2246,7 @@ function renderLeaderboard() {
     leaderboard.innerHTML = '<div class="empty-state">Stats unavailable.</div>';
     return;
   }
-  const players = [...state.game.players].sort((a, b) => getPlayerNetWorth(b) - getPlayerNetWorth(a));
+  const players = [...state.game.players].sort((a, b) => getPlayerOverallScore(b) - getPlayerOverallScore(a));
   const human = state.game.players.find((p) => p.isHuman) || players[0];
 
   const deltas = human.roundDeltas || [];
@@ -2185,6 +2269,7 @@ function renderLeaderboard() {
   leaderboard.innerHTML = `
     <div class="leaderboard-card" style="padding:16px;">
       <h2 style="margin:0 0 14px;">Leaderboard</h2>
+      <div class="desc" style="margin:-8px 0 12px; color:var(--text-soft); font-size:0.76rem;">Ranked by overall score: cash + property value (incl. upgrades) + impulse buys + your happiness rent bonus/penalty.</div>
       <div class="leaderboard-list">
         ${players.map((player, index) => `
           <div class="leaderboard-item">
@@ -2196,7 +2281,7 @@ function renderLeaderboard() {
                 <div class="sub">${player.isBankrupt ? 'Bankrupt' : `${player.properties.length} props`}</div>
               </div>
             </div>
-            <strong>${formatMoney(getPlayerNetWorth(player))}</strong>
+            <strong>${formatMoney(getPlayerOverallScore(player))}</strong>
           </div>
         `).join('')}
       </div>
@@ -2226,8 +2311,24 @@ function renderLeaderboard() {
           <strong>${leastCommonCard ? `${cardLabels[leastCommonCard[0]] || leastCommonCard[0]} (${leastCommonCard[1]})` : '—'}</strong>
         </div>
       </div>
+      <button class="pill-btn" id="toggle-cash-balances" style="width:100%; margin-top:12px;">${state.ui.statsShowCash ? '▾ Hide Cash Balances' : '▸ Show Cash Balances'}</button>
+      ${state.ui.statsShowCash ? `
+        <div class="stat-list" style="margin-top:8px;">
+          ${[...state.game.players].sort((a, b) => b.cash - a.cash).map((player) => `
+            <div class="stat-list-row">
+              <span>${player.name}${player.isBankrupt ? ' 💀' : ''}</span>
+              <strong>${formatMoney(player.cash)}</strong>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
     </div>
   `;
+  document.getElementById('toggle-cash-balances')?.addEventListener('click', () => {
+    state.ui.statsShowCash = !state.ui.statsShowCash;
+    saveState();
+    renderLeaderboard();
+  });
 }
 
 // Resolves state.settings.theme ('light'/'dark'/'system') to an actual data-theme attribute

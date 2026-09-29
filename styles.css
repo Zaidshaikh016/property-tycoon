@@ -327,6 +327,12 @@ button:hover { transform: translateY(-1px); }
   padding: 12px 14px;
   font-size: 0.84rem;
 }
+/* Sell/Upgrade on your own property — a deliberate destructive/spend action, so it's red. */
+.danger-btn {
+  background: rgba(255,106,92,0.14);
+  color: var(--danger);
+  border: 1px solid rgba(255,106,92,0.35);
+}
 
 .avatar-grid {
   display: grid;
@@ -605,12 +611,24 @@ button:hover { transform: translateY(-1px); }
   color: var(--text-soft);
 }
 .happiness-bar {
+  position: relative;
   height: 10px; border-radius: 999px; background: rgba(var(--tint-rgb),0.08); overflow:hidden;
+}
+/* Centre tick marking 0% happiness, since the bar now spans -100..100 mapped to 0..100% width. */
+.happiness-bar::before {
+  content: ""; position:absolute; top:0; bottom:0; left:50%; width:2px; background: rgba(var(--tint-rgb),0.25); z-index:1;
 }
 .happiness-bar > span {
   display:block; width: 0%; height:100%; border-radius: inherit;
   background: linear-gradient(90deg, #2dd4bf, #5ddcff 50%, #8f7dff 100%);
   transition: width 350ms ease;
+  position: relative;
+}
+.happiness-bar > span.negative {
+  background: linear-gradient(90deg, #ff6a5c, #ff9d43 100%);
+}
+.happiness-tap-hint {
+  margin-top: 6px; font-size: 0.68rem; color: var(--text-muted); text-align:center;
 }
 
 .turn-status {
@@ -896,6 +914,15 @@ button:hover { transform: translateY(-1px); }
 .sim-log-item {
   display:flex; align-items:center; gap:10px; text-align:left;
   background: rgba(var(--tint-rgb),0.04); border:1px solid rgba(var(--tint-rgb),0.08); border-radius: 14px; padding: 10px 12px;
+}
+/* Cards appear one at a time (1s apart) instead of all at once — starts hidden/offset,
+   then transitions in when the "visible" class is added a frame later. */
+.sim-log-item.sim-log-enter {
+  opacity: 0; transform: translateY(14px) scale(0.97);
+  transition: opacity 380ms ease, transform 380ms cubic-bezier(.2,.8,.2,1);
+}
+.sim-log-item.sim-log-enter.sim-log-visible {
+  opacity: 1; transform: translateY(0) scale(1);
 }
 .sim-log-icon { font-size: 1.2rem; flex-shrink: 0; }
 .sim-log-text { font-size: 0.84rem; color: var(--text); }
