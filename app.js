@@ -62,7 +62,38 @@ const TELFORD_IMAGE_BY_NAME = {
   'Southwater Square': commonsImage('Southwater_Lake_(geograph_4551580).jpg'),
   'Holland & Barrett': commonsImage('Holland_&_Barrett,_King_Street,_Hammersmith.jpg'),
   'Greggs': commonsImage('Greggs_store_front.jpg'),
-  'Primark': commonsImage("Penney's,_Mary_Street,_Dublin.jpg")
+  'Primark': commonsImage("Penney's,_Mary_Street,_Dublin.jpg"),
+  // --- Residential/neighbourhood areas (real Telford wards, generic representative photos) ---
+  'Trench Lock Apartments': commonsImage('Trench_Branch,_Shropshire_Union_Canal,_near_Trench_Lock_-_geograph.org.uk_-_343637.jpg'),
+  'Malinslee Court': commonsImage('St_Leonards,_Malinslee.jpg'),
+  'Hollinswood Retail': commonsImage('Footpath_through_the_houses_at_Randlay_-_geograph.org.uk_-_6305750.jpg'),
+  'Woodside Maisonettes': commonsImage('The_(former)_Rough_Park_Riding_School_house_-_geograph.org.uk_-_6371400.jpg'),
+  'Sutton Hill Homes': commonsImage('Sutton_Hill_Church_-_geograph.org.uk_-_152569.jpg'),
+  'Brookside Studios': commonsImage('Bike_park_and_play_area,_Brookside_-_geograph.org.uk_-_1606695.jpg'),
+  'Ketley Business Suites': commonsImage('Houses_on_Holyhead_Road,_Ketley_-_geograph.org.uk_-_6157021.jpg'),
+  'Lawley Gardens': commonsImage('Flats_at_Lawley,_Telford_-_geograph.org.uk_-_4897007.jpg'),
+  'Leegomery Court': commonsImage('Leegomery_Methodist_Chapel_-_geograph.org.uk_-_1046254.jpg'),
+  'Randlay Residences': commonsImage('Footpath_through_the_houses_at_Randlay_-_geograph.org.uk_-_6305750.jpg'),
+  'Overdale House': commonsImage('Houses_on_Overdale,_Telford_-_geograph.org.uk_-_8217291.jpg'),
+  'Donnington Wood Apartments': commonsImage('Donnington_Wood_Canal_-_geograph.org.uk_-_341246.jpg'),
+  'Horsehay Cottages': commonsImage('All_Labour_in_Vain,_Horsehay_-_geograph.org.uk_-_1307208.jpg'),
+  'Coalbrookdale Works': commonsImage('Cottages_at_Coalbrookdale_with_Holy_Trinity_Church_behind._-_geograph.org.uk_-_1239753.jpg'),
+  'Ketley Bank Homes': commonsImage('Bank_Way_through_Ketley_Bank,_Telford_-_geograph.org.uk_-_7936229.jpg'),
+  'Aqueduct Lofts': commonsImage("Telford's_Aqueduct_at_Longdon_-_geograph.org.uk_-_11908.jpg"),
+  'Stirchley Court': commonsImage('Telford_Park_School,_Stirchley_-_geograph.org.uk_-_6941419.jpg'),
+  // --- High street chain stores (generic branded storefront photos) ---
+  'WHSmith Telford': commonsImage('Detail_on_WHSmith_shop_front_-_geograph.org.uk_-_2194678.jpg'),
+  'Boots Telford': commonsImage('Boots,_Omagh_-_geograph.org.uk_-_152070.jpg'),
+  'Costa Coffee Telford': commonsImage('Costa_Coffee_shop_-_geograph.org.uk_-_4527350.jpg'),
+  'Marks & Spencer Telford': commonsImage('Marks_^_Spencer_-_geograph.org.uk_-_2802206.jpg'),
+  'Tesco Extra Telford': commonsImage('Tesco_Extra_Store_-_geograph.org.uk_-_1577072.jpg'),
+  // --- Transport & remaining landmarks ---
+  'Telford Steam Railway': commonsImage('5619_at_Horsehay_&_Dawley.jpg'),
+  'Hadley Rail Halt': commonsImage('Kings_Head,_Hadley_(Salop),_Telford_and_Wrekin_-_geograph.org.uk_-_350392.jpg'),
+  'Wellington Bus Station': commonsImage('Wellington_Market_Street_-_geograph.org.uk_-_7018233.jpg'),
+  'Priorslee Centre': commonsImage('Blue_Hand,_East_Priorslee_-_geograph.org.uk_-_889593.jpg'),
+  'Oakengates Theatre': commonsImage('Oakengates,_Shropshire,_Market_Street_-_geograph.org.uk_-_2714103.jpg'),
+  'Wrockwardine Wood Flats': commonsImage('Church_Road,_Wrockwardine_Wood,_Telford_-_geograph.org.uk_-_1257858.jpg')
 };
 
 function createPropertyPool(count = 50) {
