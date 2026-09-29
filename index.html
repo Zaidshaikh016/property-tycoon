@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#071521" />
+    <title>Property Tycoon</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="onboarding" class="screen onboarding-screen active"></div>
+
+      <div id="game-shell" class="hidden">
+        <main>
+          <section id="view-home" class="view active"></section>
+          <section id="view-turn" class="view"></section>
+          <section id="view-portfolio" class="view"></section>
+          <section id="view-leaderboard" class="view"></section>
+          <section id="view-settings" class="view"></section>
+        </main>
+
+        <nav class="bottom-nav" aria-label="Main navigation">
+          <button class="nav-item active" data-view="home" aria-label="Home">
+            <span class="nav-icon">⌂</span>
+            <span>Home</span>
+          </button>
+          <button class="nav-item" data-view="turn" aria-label="Turn">
+            <span class="nav-icon">⚡</span>
+            <span>Turn</span>
+          </button>
+          <button class="nav-item" data-view="portfolio" aria-label="Portfolio">
+            <span class="nav-icon">▣</span>
+            <span>Portfolio</span>
+          </button>
+          <button class="nav-item" data-view="leaderboard" aria-label="Leaderboard">
+            <span class="nav-icon">🏆</span>
+            <span>Leaderboard</span>
+          </button>
+          <button class="nav-item" data-view="settings" aria-label="Settings">
+            <span class="nav-icon">⚙</span>
+            <span>Settings</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <div id="modal-root"></div>
+    <div id="loading-overlay" class="loading-overlay hidden">
+      <div class="loading-card">
+        <div class="spinner"></div>
+        <strong id="loading-title">Generating live images</strong>
+        <span id="loading-subtitle">Properties and places are being generated for your area…</span>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
