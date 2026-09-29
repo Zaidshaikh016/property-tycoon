@@ -23,6 +23,7 @@ const OVERPASS_URLS = [
   'https://overpass.openstreetmap.ru/api/interpreter'
 ];
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
+const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i;
 
@@ -49,12 +50,13 @@ module.exports = async function handler(req, res) {
     }
 
     const places = await findNearbyPlaces(geo.latitude, geo.longitude, targetCount);
-    if (!places.length) {
+    const finalPlaces = places.length ? places : await generatePlacesWithAI(geo.area, targetCount);
+    if (!finalPlaces.length) {
       res.status(404).json({ error: 'No nearby places found for this postcode.' });
       return;
     }
 
-    const withImages = await attachImages(places, geo.area);
+    const withImages = await attachImages(finalPlaces, geo.area);
 
     res.status(200).json({ locations: withImages, area: geo.area });
   } catch (err) {
@@ -187,23 +189,81 @@ function categoryFromTags(tags) {
   return 'Commercial';
 }
 
+// Fallback when Overpass is unreachable/blocked (common from cloud/serverless IPs): ask the
+// model to name plausible real UK high-street chains and local spot types for the area. This
+// still needs OPENAI_API_KEY; if that's missing too, the caller returns a 404 to the client,
+// which then falls back to the built-in procedural properties.
+async function generatePlacesWithAI(area, targetCount) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return [];
+
+  const prompt = `List ${targetCount} real or highly plausible UK businesses/landmarks you'd expect to find in or near "${area}", UK. Include a mix: some recognisable UK high-street chains (e.g. Holland & Barrett, Greggs, Boots) if plausible for the area, local independent shops/cafes, a transport link (station or bus interchange), a workplace/office, and a landmark. Respond ONLY with a JSON object: {"places": [{"name": string, "category": one of "Retail"|"Hospitality"|"Commercial"|"Transport"|"Landmark"|"Leisure", "isEnterprise": boolean, "importance": number between 0 and 1}]}.`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(OPENAI_CHAT_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' }
+      }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) return [];
+    const data = await response.json();
+    const raw = data?.choices?.[0]?.message?.content;
+    const parsed = raw ? JSON.parse(raw) : null;
+    const places = Array.isArray(parsed?.places) ? parsed.places : [];
+    return places.slice(0, targetCount).map((place, index) => ({
+      id: `ai-${index}`,
+      name: place.name,
+      category: place.category || 'Commercial',
+      isEnterprise: Boolean(place.isEnterprise),
+      importance: clampNumber(Number(place.importance ?? 0.4), 0, 1),
+      distance: Number((0.3 + Math.random() * 2.5).toFixed(1))
+    })).filter((place) => place.name);
+  } catch (err) {
+    console.warn('AI place generation failed:', err.message);
+    return [];
+  }
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
 async function attachImages(places, area) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return places.map((place) => ({ ...place, area, description: describePlace(place, area) }));
   }
 
-  const results = [];
-  for (const place of places) {
-    const description = describePlace(place, area);
-    let imageUrl = null;
-    try {
-      imageUrl = await generateImage(apiKey, place, area);
-    } catch (err) {
-      console.warn(`Image generation failed for ${place.name}:`, err.message);
+  // Generate images concurrently (small batches) so the whole request doesn't get killed by
+  // the platform's function-duration limit while waiting on many sequential image calls.
+  const CONCURRENCY = 4;
+  const results = new Array(places.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < places.length) {
+      const index = cursor++;
+      const place = places[index];
+      const description = describePlace(place, area);
+      let imageUrl = null;
+      try {
+        imageUrl = await generateImage(apiKey, place, area);
+      } catch (err) {
+        console.warn(`Image generation failed for ${place.name}:`, err.message);
+      }
+      results[index] = { ...place, area, description, imageUrl };
     }
-    results.push({ ...place, area, description, imageUrl });
   }
+
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, places.length) }, worker));
   return results;
 }
 

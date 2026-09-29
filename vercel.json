@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/generate-locations.js": {
+      "maxDuration": 60
+    }
+  }
+}
