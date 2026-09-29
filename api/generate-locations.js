@@ -15,7 +15,13 @@
 // without imageUrl so the client can still render them with its gradient placeholders.
 
 const POSTCODES_IO = 'https://api.postcodes.io/postcodes/';
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// Public Overpass instances are flaky/rate-limited individually, so we try them in order
+// and use whichever responds first with real data.
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter'
+];
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i;
@@ -88,14 +94,8 @@ async function findNearbyPlaces(lat, lon, targetCount) {
     out center ${targetCount * 4};
   `;
 
-  const response = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: query
-  });
-  if (!response.ok) return [];
-  const data = await response.json();
-  const elements = Array.isArray(data.elements) ? data.elements : [];
+  const data = await queryOverpassWithFallback(query);
+  const elements = Array.isArray(data?.elements) ? data.elements : [];
 
   const seenNames = new Set();
   const enterprises = [];
@@ -140,6 +140,31 @@ async function findNearbyPlaces(lat, lon, targetCount) {
   const chosenGeneric = generic.slice(0, Math.max(remaining, 0));
 
   return [...chosenEnterprises, ...chosenGeneric].sort(byDistance).slice(0, targetCount);
+}
+
+// Tries each public Overpass mirror in turn (some reject requests intermittently or lack a
+// proper User-Agent/Accept header) and returns the first successful JSON response.
+async function queryOverpassWithFallback(query) {
+  const headers = {
+    'Content-Type': 'text/plain',
+    'Accept': 'application/json',
+    'User-Agent': 'PropertyTycoonApp/1.0 (+https://property-tycoon-iota.vercel.app)'
+  };
+
+  for (const url of OVERPASS_URLS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(url, { method: 'POST', headers, body: query, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (Array.isArray(data.elements)) return data;
+    } catch (err) {
+      console.warn(`Overpass mirror failed (${url}):`, err.message);
+    }
+  }
+  return null;
 }
 
 // Great-circle distance between two lat/lon points, in kilometres.
