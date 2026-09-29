@@ -50,9 +50,15 @@ module.exports = async function handler(req, res) {
     }
 
     const places = await findNearbyPlaces(geo.latitude, geo.longitude, targetCount);
-    const finalPlaces = places.length ? places : await generatePlacesWithAI(geo.area, targetCount);
+    let finalPlaces = places;
+    let aiDebug = null;
     if (!finalPlaces.length) {
-      res.status(404).json({ error: 'No nearby places found for this postcode.' });
+      const aiResult = await generatePlacesWithAI(geo.area, targetCount);
+      finalPlaces = aiResult.places;
+      aiDebug = aiResult.debug;
+    }
+    if (!finalPlaces.length) {
+      res.status(404).json({ error: 'No nearby places found for this postcode.', debug: aiDebug });
       return;
     }
 
@@ -195,7 +201,7 @@ function categoryFromTags(tags) {
 // which then falls back to the built-in procedural properties.
 async function generatePlacesWithAI(area, targetCount) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) return { places: [], debug: 'OPENAI_API_KEY is not set.' };
 
   const prompt = `List ${targetCount} real or highly plausible UK businesses/landmarks you'd expect to find in or near "${area}", UK. Include a mix: some recognisable UK high-street chains (e.g. Holland & Barrett, Greggs, Boots) if plausible for the area, local independent shops/cafes, a transport link (station or bus interchange), a workplace/office, and a landmark. Respond ONLY with a JSON object: {"places": [{"name": string, "category": one of "Retail"|"Hospitality"|"Commercial"|"Transport"|"Landmark"|"Leisure", "isEnterprise": boolean, "importance": number between 0 and 1}]}.`;
 
@@ -213,12 +219,15 @@ async function generatePlacesWithAI(area, targetCount) {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    if (!response.ok) return [];
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      return { places: [], debug: `OpenAI chat API responded with ${response.status}: ${errBody.slice(0, 300)}` };
+    }
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
     const parsed = raw ? JSON.parse(raw) : null;
     const places = Array.isArray(parsed?.places) ? parsed.places : [];
-    return places.slice(0, targetCount).map((place, index) => ({
+    const mapped = places.slice(0, targetCount).map((place, index) => ({
       id: `ai-${index}`,
       name: place.name,
       category: place.category || 'Commercial',
@@ -226,9 +235,10 @@ async function generatePlacesWithAI(area, targetCount) {
       importance: clampNumber(Number(place.importance ?? 0.4), 0, 1),
       distance: Number((0.3 + Math.random() * 2.5).toFixed(1))
     })).filter((place) => place.name);
+    return { places: mapped, debug: mapped.length ? null : 'AI response contained no usable places.' };
   } catch (err) {
     console.warn('AI place generation failed:', err.message);
-    return [];
+    return { places: [], debug: `AI place generation threw: ${err.message}` };
   }
 }
 

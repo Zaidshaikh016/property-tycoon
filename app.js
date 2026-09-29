@@ -782,8 +782,8 @@ async function tryGenerateLocations(postcode, count) {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    if (!response.ok) throw new Error(`Location service responded with ${response.status}`);
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`${data?.error || `HTTP ${response.status}`}${data?.debug ? ` (${data.debug})` : ''}`);
     if (!Array.isArray(data.locations) || !data.locations.length) throw new Error('No locations returned');
     return mapGeneratedLocationsToProperties(data.locations);
   } catch (err) {
@@ -1760,7 +1760,7 @@ function renderSettings() {
       </div>
       <div class="settings-section">
         <h3>Danger Zone</h3>
-        <button class="ghost-btn" id="reset-game-btn" style="width:100%; color: var(--danger); border-color: rgba(255,106,92,0.35);">Reset Game</button>
+        <button class="ghost-btn" id="reset-game-btn" style="width:100%; color: var(--danger); border-color: rgba(255,106,92,0.35);">Reset All &amp; Start Over</button>
       </div>
     </div>
   `;
@@ -1773,12 +1773,34 @@ function renderSettings() {
     });
   });
 
-  document.getElementById('reset-game-btn')?.addEventListener('click', resetGame);
+  document.getElementById('reset-game-btn')?.addEventListener('click', confirmResetGame);
+}
+
+// Shows a themed confirmation modal instead of the browser's native confirm() dialog.
+function confirmResetGame() {
+  const modal = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="top"><strong>Reset All?</strong><button type="button" class="ghost-btn" data-close-modal="true">Cancel</button></div>
+        <div class="modal-body">
+          <div class="desc">This clears your profile, progress, settings and location, and takes you back to onboarding. This can't be undone.</div>
+          <div class="turn-actions" style="margin-top: 14px;">
+            <button class="buy-btn" id="confirm-reset-btn">Reset All</button>
+            <button class="skip-btn" data-close-modal="true">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-root').innerHTML = modal;
+  document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+    btn.addEventListener('click', () => { document.getElementById('modal-root').innerHTML = ''; });
+  });
+  document.getElementById('confirm-reset-btn')?.addEventListener('click', resetGame);
 }
 
 // Wipes all saved progress and restarts onboarding from scratch.
 function resetGame() {
-  if (!confirm('Reset your game? This clears your progress and starts over.')) return;
   localStorage.removeItem(STORAGE_KEY);
   location.reload();
 }
