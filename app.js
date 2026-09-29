@@ -1801,6 +1801,9 @@ function confirmResetGame() {
 
 // Wipes all saved progress and restarts onboarding from scratch.
 function resetGame() {
+  // Without this, the beforeunload handler would re-save the stale in-memory state
+  // right back into localStorage before the reload actually happens.
+  window.removeEventListener('beforeunload', saveState);
   localStorage.removeItem(STORAGE_KEY);
   location.reload();
 }
