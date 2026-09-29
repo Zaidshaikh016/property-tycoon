@@ -282,6 +282,8 @@ async function generateImage(apiKey, place, area) {
   // and fall back to the client's gradient placeholder instead.
   const timeoutId = setTimeout(() => controller.abort(), 18000);
   try {
+    // dall-e-3 is used instead of gpt-image-1 because the latter requires OpenAI org
+    // verification that most API keys don't have yet, and would fail every single call.
     const response = await fetch(OPENAI_IMAGES_URL, {
       method: 'POST',
       headers: {
@@ -289,14 +291,19 @@ async function generateImage(apiKey, place, area) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'gpt-image-1',
+        model: 'dall-e-3',
         prompt,
         size: '1024x1024',
+        quality: 'standard',
+        response_format: 'url',
         n: 1
       }),
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`OpenAI image API responded with ${response.status}`);
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => '');
+      throw new Error(`OpenAI image API responded with ${response.status}: ${errBody.slice(0, 200)}`);
+    }
     const data = await response.json();
     const b64 = data?.data?.[0]?.b64_json;
     const url = data?.data?.[0]?.url;
