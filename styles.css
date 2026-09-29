@@ -499,6 +499,16 @@ button:hover { transform: translateY(-1px); }
 .home-balance .amount {
   font-size: clamp(2rem, 7vw, 3rem); letter-spacing: -0.06em; font-weight: 800;
 }
+.networth-delta {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 14px;
+  padding: 8px 12px; border-radius: 12px; font-size: 0.82rem; font-weight: 700; width: fit-content;
+}
+.networth-delta.gain { background: rgba(52,211,153,0.14); color: var(--success); }
+.networth-delta.loss { background: rgba(255,106,92,0.14); color: var(--danger); }
+.networth-delta .delta-arrow { font-size: 0.9rem; }
+.networth-delta .delta-pct { opacity: 0.8; font-weight: 600; }
+.networth-delta .delta-label { color: var(--text-soft); font-weight: 600; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em; }
+.happiness-header small { color: var(--text-muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
 .home-stats {
   display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px;
 }
@@ -756,6 +766,26 @@ button:hover { transform: translateY(-1px); }
 .turn-complete-screen p { color: var(--text-soft); margin: 0 0 20px; max-width: 280px; }
 .turn-complete-screen .primary-btn { width: min(100%, 320px); }
 
+.sim-log {
+  width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 20px; max-height: 40vh; overflow-y: auto;
+}
+.sim-log-item {
+  display:flex; align-items:center; gap:10px; text-align:left;
+  background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 10px 12px;
+}
+.sim-log-icon { font-size: 1.2rem; flex-shrink: 0; }
+.sim-log-text { font-size: 0.84rem; color: var(--text); }
+
+.stat-list { display:flex; flex-direction:column; gap:2px; margin-top: 8px; }
+.stat-list-row {
+  display:flex; justify-content:space-between; align-items:center; gap:10px; padding: 12px 4px; border-bottom:1px solid rgba(255,255,255,0.05);
+}
+.stat-list-row span { color: var(--text-soft); font-size: 0.82rem; }
+.stat-list-row strong { text-align:right; font-size: 0.86rem; }
+.gain-text { color: var(--success); }
+.loss-text { color: var(--danger); }
+
 .dice-card .dice-visual {
   display:grid; place-items:center; min-height: 210px; background: linear-gradient(160deg, rgba(255, 209, 102, 0.1), rgba(72, 130, 255, 0.08));
   border-radius: 18px; margin-top: 8px; border: 1px solid rgba(255,255,255,0.08);
@@ -856,9 +886,31 @@ button:hover { transform: translateY(-1px); }
   background-size: cover; background-position: center; background-repeat: no-repeat;
 }
 .portfolio-item h4 { margin:0; font-size:1rem; }
-.portfolio-item .sub { color: var(--text-soft); font-size:0.72rem; }
+.portfolio-item .sub { color: var(--text-soft); font-size:0.72rem; margin-bottom: 6px; }
 .item-actions { display:flex; gap:6px; }
 .item-actions button { padding:8px 10px; border-radius: 10px; border:none; font-size:0.72rem; }
+
+.show-all-toggle {
+  width: 100%; text-align: left; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  color: var(--text-soft); padding: 10px 14px; border-radius: 12px; font-weight: 700; font-size: 0.8rem;
+}
+
+/* Unowned property preview: greyed silhouette with a "?" mark, tap Glimpse to scout it */
+.locked-item .locked-thumb {
+  filter: grayscale(1) brightness(0.55); position: relative; display:grid; place-items:center;
+}
+.locked-thumb .lock-mark {
+  font-size: 1.6rem; font-weight: 900; color: rgba(255,255,255,0.85); text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+}
+.locked-name { color: var(--text-soft); }
+
+.upgrade-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top: 8px; }
+.upgrade-icons { display:flex; gap:2px; font-size: 0.95rem; }
+.upgrade-icon.none { color: var(--text-muted); font-size: 0.8rem; }
+.maxed-badge {
+  font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--danger); background: rgba(255,106,92,0.14); padding: 5px 9px; border-radius: 999px;
+}
 
 .settings-card {
   padding: 16px 16px 18px;

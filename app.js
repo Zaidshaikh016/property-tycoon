@@ -32,21 +32,58 @@ function uid(prefix = 'id') {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Real, high-quality photos (Wikimedia Commons) for the handful of named Telford
+// landmarks/chains below. Anything not listed here falls back to a gradient placeholder.
+// NOTE: images are served via the Commons "Special:FilePath" redirect endpoint, which is
+// the stable, hotlink-safe way to embed Commons files (direct upload.wikimedia.org/thumb
+// URLs can get blocked by the browser's Opaque Response Blocking when hotlinked directly).
+function commonsImage(filename, width = 900) {
+  return `url('https://commons.wikimedia.org/wiki/Special:FilePath/${filename}?width=${width}')`;
+}
+const TELFORD_IMAGE_BY_NAME = {
+  'The Wrekin': commonsImage('Rhekin_by_Wrodian.jpg'),
+  'Ironbridge Gorge': commonsImage('Iron_Bridge_east_side_in_February_2019.jpg'),
+  'Telford Shopping Centre': commonsImage('Telford_Centre_2019.jpg'),
+  'Blists Hill Victorian Town': commonsImage('Blists_Hill_Victorian_Town_Canal_Street_November_2021.jpg'),
+  'HM Revenue & Customs': commonsImage('CabrilloBusinessPark-1.png'),
+  'Coforge Office': commonsImage('NIIT_Technologies_Campus.JPG'),
+  'Telford International Centre': commonsImage('CabrilloBusinessPark-1.png'),
+  'Southwater Business Quarter': commonsImage('CabrilloBusinessPark-1.png'),
+  'Euston Way Offices': commonsImage('CabrilloBusinessPark-1.png'),
+  'Stafford Park Business Park': commonsImage('CabrilloBusinessPark-1.png'),
+  'Telford Central Railway Station': commonsImage('Telford_Central_railway_station_1.jpg'),
+  'Wellington Market Hall': commonsImage('Wellington_Market_Street_-_geograph.org.uk_-_7018233.jpg'),
+  'Oakengates Market Street': commonsImage('Oakengates,_Shropshire,_Market_Street_-_geograph.org.uk_-_2714103.jpg'),
+  'Madeley High Street': commonsImage('Madeley_High_Street_-_geograph.org.uk_-_4329231.jpg'),
+  'Dawley Town Hall': commonsImage('Dawley_Town_Hall.png'),
+  'Hadley Precinct': commonsImage('Holy_Trinity_,_Hadley_-_geograph.org.uk_-_1716799.jpg'),
+  'Priorslee Retail Park': commonsImage('Blue_Hand,_East_Priorslee_-_geograph.org.uk_-_889593.jpg'),
+  'Newport Road Retail': commonsImage('Newport_from_cheeny_hill.jpg'),
+  'Southwater Square': commonsImage('Southwater_Lake_(geograph_4551580).jpg'),
+  'Holland & Barrett': commonsImage('Holland_&_Barrett,_King_Street,_Hammersmith.jpg'),
+  'Greggs': commonsImage('Greggs_store_front.jpg'),
+  'Primark': commonsImage("Penney's,_Mary_Street,_Dublin.jpg")
+};
+
 function createPropertyPool(count = 50) {
+  // Real Telford places, ordered so the most iconic/valuable land in the higher (rarer)
+  // Monopoly-style tiers below — indices 0-8 Brown, 45-47 Green, 48-49 Dark Blue, etc.
   const names = [
-    'Ropewalk Shopping Centre', 'Coventry Cathedral', 'Queens Road Apartments', 'Nuneaton Museum', 'Regent Cinema', 'Bell Street Hotel',
-    'Market Square Restaurant', 'Old Town Stadium', 'Town Hall Offices', 'Harvester Lane', 'Crown Lane Retail', 'Station Plaza',
-    'Greenfield Market', 'Maple Arcade', 'Festival Arts Hub', 'Midtown Studio', 'The Avenue Tower', 'Rivergate Offices', 'St. Nicholas Pub',
-    'High Street Home', 'The Reading Rooms', 'Bridgeview Residences', 'Church End Workshops', 'Sunrise Apartments', 'Millennium Grove',
-    'Nuneaton Docks', 'Civic Centre', 'Northgate Complex', 'Silverstone Retail Park', 'Mile End Courtyard', 'Phoenix Hall', 'Market Yard',
-    'Balmoral Lofts', 'The Lodge', 'Meridian House', 'Briar Point', 'Oakwell Apartments', 'Palladium Cinema', 'Queensway Gardens',
-    'Forty Steps Offices', 'The Hub', 'Central Point', 'Leamington Court', 'Broad Street Suites', 'Riverside Market', 'Trafalgar Hotel',
-    'Castle Quay', 'All Saints Apartments', 'Elm Court', 'Oak Street Retail', 'Queen’s Park', 'Lakeside Centre', 'Old Mill', 'Horizon Plaza',
-    'Windsor House', 'The Arcade', 'Monsoon Hotel', 'Bromley Business Park', 'Rosemere Flats', 'Canal Walk', 'Severn Court', 'The Docks'
+    'Trench Lock Apartments', 'Malinslee Court', 'Hollinswood Retail', 'Woodside Maisonettes', 'Sutton Hill Homes',
+    'Brookside Studios', 'Ketley Business Suites', 'Lawley Gardens', 'Leegomery Court',
+    'Randlay Residences', 'Overdale House', 'Donnington Wood Apartments', 'Wrockwardine Wood Flats', 'Horsehay Cottages',
+    'Coalbrookdale Works', 'Ketley Bank Homes', 'Aqueduct Lofts', 'Stirchley Court',
+    'Madeley High Street', 'Dawley Town Hall', 'Hadley Precinct', 'Priorslee Retail Park', 'Newport Road Retail',
+    'Wellington Market Hall', 'Oakengates Theatre', 'Southwater Square',
+    'Holland & Barrett', 'Greggs', 'Primark', 'WHSmith Telford', 'Boots Telford', 'Costa Coffee Telford', 'Marks & Spencer Telford', 'Tesco Extra Telford',
+    'Telford Central Railway Station', 'Wellington Bus Station', 'Oakengates Market Street', 'Hadley Rail Halt', 'Priorslee Centre', 'Telford Steam Railway',
+    'Coforge Office', 'Telford International Centre', 'Southwater Business Quarter', 'Euston Way Offices', 'Stafford Park Business Park',
+    'The Wrekin', 'Telford Shopping Centre', 'Blists Hill Victorian Town',
+    'HM Revenue & Customs', 'Ironbridge Gorge'
   ];
 
   const categories = ['Commercial', 'Residential', 'Landmark', 'Hospitality', 'Retail', 'Leisure'];
-  const areas = ['Nuneaton', 'Coventry', 'Leicester', 'Birmingham', 'Hinckley', 'Bedworth'];
+  const areas = ['Telford', 'Wellington', 'Oakengates', 'Madeley', 'Dawley', 'Ironbridge'];
   // Monopoly-style colour groups. Green & Dark Blue are the priciest and deliberately the rarest to find.
   const tiers = [
     { tier: 1, label: 'Brown', color: '#9c6d52', base: 180, rentFactor: 1.0, rarity: 'Common' },
@@ -65,7 +102,7 @@ function createPropertyPool(count = 50) {
 
   tiers.forEach((tierDef, tierIndex) => {
     for (let i = 0; i < tierCounts[tierIndex]; i++) {
-      const name = names[index % names.length] + (i > 0 ? ` ${i + 1}` : '');
+      const name = names[index % names.length] + (index >= names.length ? ` ${Math.floor(index / names.length) + 1}` : '');
       const category = categories[(index + i) % categories.length];
       const area = areas[(index + i) % areas.length];
       const distance = (Math.random() * 3.2 + 0.3).toFixed(1);
@@ -73,7 +110,7 @@ function createPropertyPool(count = 50) {
       const purchasePrice = Math.round(gameValue * (0.85 + Math.random() * 0.2));
       const yieldValue = (Math.random() * 4.5 + 2.4).toFixed(1);
       const monthlyRent = Math.round((purchasePrice * (0.08 + (tierDef.tier - 1) * 0.02)) + (Math.random() * 180));
-      const image = getPropertyBackground(tierDef.tier, category, index % 6);
+      const image = TELFORD_IMAGE_BY_NAME[name] || getPropertyBackground(tierDef.tier, category, index % 6);
       result.push({
         id: `prop-${index + 1}`,
         externalPlaceId: `place-${index + 1}`,
@@ -91,6 +128,7 @@ function createPropertyPool(count = 50) {
         baseRent: monthlyRent,
         yield: Number(yieldValue),
         image,
+        upgradeLevel: 0,
         ownerId: null,
         risk: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 3)],
         description: `${category} asset with strong ${area.toLowerCase()} demand and a compelling local occupancy profile.`
@@ -179,6 +217,8 @@ function buildDefaultGame(profile) {
     impulseAssets: [],
     savedCards: [],
     isHuman: true,
+    netWorthAtMonthStart: 5000,
+    roundDeltas: [],
     stats: { rentCollected: 0, moneySpent: 0, propertiesBought: 0, offersCompleted: 0, netWorth: 5000 }
   };
 
@@ -203,6 +243,8 @@ function buildDefaultGame(profile) {
       impulseAssets: [],
       savedCards: [],
       isHuman: false,
+      netWorthAtMonthStart: 5000,
+      roundDeltas: [],
       difficulty: 'normal',
       stats: { rentCollected: 0, moneySpent: 0, propertiesBought: 0, offersCompleted: 0, netWorth: 5000 }
     });
@@ -210,7 +252,7 @@ function buildDefaultGame(profile) {
 
   const properties = createPropertyPool(50);
   const activity = [
-    { id: uid('act'), text: 'Welcome to Nuneaton. The market is live.', icon: '🏙️', time: 'now', color: null },
+    { id: uid('act'), text: 'Welcome to Telford. The market is live.', icon: '🏙️', time: 'now', color: null },
     { id: uid('act'), text: 'Local market sentiment is warming up.', icon: '📈', time: '2m ago', color: null }
   ];
 
@@ -221,7 +263,7 @@ function buildDefaultGame(profile) {
     aiOpponents: 3,
     difficulty: 'normal',
     localProperties: 50,
-    area: 'Nuneaton / broad local area',
+    area: 'Telford / broad local area',
     players,
     properties,
     chanceDeck: createChanceDeck(),
@@ -232,6 +274,8 @@ function buildDefaultGame(profile) {
     turnIndex: 0,
     turnCompleted: false,
     opponentsSimulated: false,
+    lastSimulationLog: [],
+    cardDrawCounts: { property: 0, dice: 0, impulse: 0, chance: 0 },
     gameStarted: true,
     settings: { difficulty: 'normal', noLocalProperties: 50 }
   };
@@ -281,7 +325,9 @@ const state = {
     activeView: 'home',
     onboardingStep: 0,
     modal: null,
-    passScreen: false
+    passScreen: false,
+    portfolioShowAll: false,
+    portfolioTab: 'properties'
   },
   game: null,
   turnDeckCards: []
@@ -860,6 +906,23 @@ function getPlayerNetWorth(player) {
   return player.cash + propertyValue + impulseValue;
 }
 
+// Happier landlords collect better rent — up to +20% at 100% happiness.
+function getHappinessRentMultiplier(player) {
+  return 1 + (clamp(Number(player?.happiness || 0), 0, 100) / 100) * 0.2;
+}
+
+const MAX_UPGRADE_LEVEL = 5;
+// Cost scales with how valuable the property already is (Monopoly-style: Dark Blue costs far
+// more per level than Brown), while the rent boost per level scales the same way so the
+// cost-to-reward ratio stays reasonable across every tier.
+function getUpgradeCost(property, level) {
+  return Math.round(property.purchasePrice * 0.22 * level);
+}
+function getEffectiveRent(property) {
+  const level = property.upgradeLevel || 0;
+  return Math.round(property.baseRent * (1 + level * 0.18));
+}
+
 function generateTurnDeck() {
   if (!state.game) return [];
   const propertyPool = state.game.properties.filter((property) => property.ownerId === null);
@@ -870,7 +933,15 @@ function generateTurnDeck() {
   }
   cards.push({ type: 'dice' });
   cards.push({ type: 'impulse' });
+  cards.forEach((card) => trackCardDraw(card.type));
   return shuffleArray(cards);
+}
+
+// Tallies which card types get drawn most/least often, shown later on the Stats page.
+function trackCardDraw(type) {
+  if (!state.game) return;
+  if (!state.game.cardDrawCounts) state.game.cardDrawCounts = { property: 0, dice: 0, impulse: 0, chance: 0 };
+  state.game.cardDrawCounts[type] = (state.game.cardDrawCounts[type] || 0) + 1;
 }
 
 function renderHome() {
@@ -883,6 +954,11 @@ function renderHome() {
   const props = player.properties.length;
   const rent = getPlayerRent(player);
   const happiness = Math.min(player.happiness || 20, 100);
+  const netWorth = getPlayerNetWorth(player);
+  const baseline = Number.isFinite(player.netWorthAtMonthStart) ? player.netWorthAtMonthStart : netWorth;
+  const delta = netWorth - baseline;
+  const deltaPct = baseline > 0 ? (delta / baseline) * 100 : 0;
+  const isGain = delta >= 0;
   home.innerHTML = `
     <div class="home-top">
       <div class="player-pill">
@@ -903,6 +979,13 @@ function renderHome() {
         <div class="home-balance-logo">💰</div>
       </div>
 
+      <div class="networth-delta ${isGain ? 'gain' : 'loss'}">
+        <span class="delta-arrow">${isGain ? '▲' : '▼'}</span>
+        <span>${isGain ? '+' : '−'}${formatMoney(Math.abs(delta))}</span>
+        <span class="delta-pct">(${isGain ? '+' : '−'}${Math.abs(deltaPct).toFixed(1)}%)</span>
+        <span class="delta-label">this turn</span>
+      </div>
+
       <div class="home-stats">
         <div class="stat-card">
           <div class="kicker">Properties</div>
@@ -919,7 +1002,7 @@ function renderHome() {
       </div>
 
       <div class="happiness-wrap">
-        <div class="happiness-header"><span>Happiness</span><strong>${Math.round(happiness)}%</strong></div>
+        <div class="happiness-header"><span>Happiness <small>(+${Math.round((getHappinessRentMultiplier(player) - 1) * 100)}% rent)</small></span><strong>${Math.round(happiness)}%</strong></div>
         <div class="happiness-bar"><span style="width:${happiness}%"></span></div>
       </div>
     </div>
@@ -957,10 +1040,11 @@ function renderHome() {
 }
 
 function getPlayerRent(player) {
-  return (player.properties || []).reduce((total, propertyId) => {
+  const totalRent = (player.properties || []).reduce((total, propertyId) => {
     const property = getPropertyById(propertyId);
-    return total + (property ? property.baseRent : 0);
+    return total + (property ? getEffectiveRent(property) : 0);
   }, 0);
+  return Math.round(totalRent * getHappinessRentMultiplier(player));
 }
 
 function animateMoneyNumbers() {
@@ -1072,42 +1156,66 @@ function renderTurn() {
 
 function renderTurnCompleteScreen(turn) {
   const simulated = Boolean(state.game.opponentsSimulated);
+  const log = state.game.lastSimulationLog || [];
   turn.innerHTML = `
     <div class="turn-complete-screen">
       <div class="complete-icon">🎉</div>
       <h2>Turn Complete!</h2>
-      <p>You've been through every card for Month ${state.game.month}.</p>
-      ${simulated
-        ? `<button class="primary-btn" id="view-leaderboard-btn">View Updated Leaderboard</button>`
-        : `<button class="primary-btn" id="simulate-btn">Simulate Opponents' Turn</button>`}
+      ${simulated ? `
+        <p>Here's what happened while you were away:</p>
+        <div class="sim-log">
+          ${log.length ? log.map((entry) => `
+            <div class="sim-log-item">
+              <div class="sim-log-icon">${entry.icon}</div>
+              <div class="sim-log-text">${entry.text}</div>
+            </div>
+          `).join('') : '<div class="empty-state">No opponent activity this round.</div>'}
+        </div>
+        <button class="primary-btn" id="your-turn-btn">Your Turn!</button>
+      ` : `
+        <p>You've been through every card for Month ${state.game.month}.</p>
+        <button class="primary-btn" id="simulate-btn">Simulate Opponents' Turn</button>
+      `}
     </div>
   `;
   document.getElementById('simulate-btn')?.addEventListener('click', handleSimulateClick);
-  document.getElementById('view-leaderboard-btn')?.addEventListener('click', goToLeaderboardAfterTurn);
+  document.getElementById('your-turn-btn')?.addEventListener('click', handleYourTurnClick);
 }
 
 function handleSimulateClick() {
   simulateOpponents();
-  // Prepare next month's deck in the background; the completion screen keeps showing
-  // (now with "View Updated Leaderboard") until the player is ready to move on.
-  state.game.month += 1;
-  state.turnDeckCards = generateTurnDeck();
-  state.game.turnIndex = 0;
-  saveState();
+  // Keep the results on screen — the player only moves on once they click "Your Turn!".
   renderTurn();
 }
 
-function goToLeaderboardAfterTurn() {
+function handleYourTurnClick() {
+  // Snapshot each player's net worth as the new baseline before starting next month,
+  // and remember whether this month was a gain or a loss for the Stats page averages.
+  state.game.players.forEach((p) => {
+    const netWorth = getPlayerNetWorth(p);
+    const baseline = Number.isFinite(p.netWorthAtMonthStart) ? p.netWorthAtMonthStart : netWorth;
+    if (!p.roundDeltas) p.roundDeltas = [];
+    p.roundDeltas.push(netWorth - baseline);
+    p.netWorthAtMonthStart = netWorth;
+  });
+
+  state.game.month += 1;
+  state.turnDeckCards = generateTurnDeck();
+  state.game.turnIndex = 0;
   state.game.turnCompleted = false;
   state.game.opponentsSimulated = false;
+  state.game.lastSimulationLog = [];
   saveState();
-  setView('leaderboard');
+  setView('home');
+  renderAll();
 }
 
-// Gives each AI opponent one simple action for the round and narrates it via toasts/activity.
+// Gives each AI opponent one simple action for the round and narrates it via a persistent
+// log (shown until the player taps "Your Turn!") as well as toasts/activity.
 function simulateOpponents() {
   const opponents = state.game.players.filter((player) => !player.isHuman);
   const availableProperties = state.game.properties.filter((property) => property.ownerId === null);
+  const log = [];
 
   opponents.forEach((opponent) => {
     const roll = Math.random();
@@ -1120,7 +1228,9 @@ function simulateOpponents() {
         choice.ownerId = opponent.id;
         opponent.properties.push(choice.id);
         availableProperties.splice(availableProperties.indexOf(choice), 1);
-        state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} bought ${choice.name}`, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
+        const text = `${opponent.name} bought ${choice.name} for ${formatMoney(choice.purchasePrice)}`;
+        state.game.activity.unshift({ id: uid('act'), text, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
+        log.push({ icon: '🏠', text });
         showToast(`${opponent.name.toUpperCase()} BOUGHT ${choice.name.toUpperCase()}`);
         return;
       }
@@ -1132,10 +1242,12 @@ function simulateOpponents() {
       const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
       const property = ownedProperties[(Math.random() * ownedProperties.length) | 0];
       if (owner && property) {
-        const rentDue = Math.round(property.baseRent * (0.9 + Math.random() * 0.3));
+        const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner));
         opponent.cash -= rentDue;
         owner.cash += rentDue;
-        state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[opponent.color] });
+        const text = `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`;
+        state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
+        log.push({ icon: '💸', text });
         showToast(`${opponent.name.toUpperCase()} PAID RENT TO ${owner.name.toUpperCase()}`);
         return;
       }
@@ -1147,15 +1259,20 @@ function simulateOpponents() {
       opponent.cash -= asset.price;
       opponent.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
       opponent.happiness = clamp(Number(opponent.happiness || 20) + asset.popularity, 0, 100);
-      state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
+      const text = `${opponent.name} bought ${asset.name}`;
+      state.game.activity.unshift({ id: uid('act'), text, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
+      log.push({ icon: '🛍️', text });
       showToast(`${opponent.name.toUpperCase()} BOUGHT ${asset.name.toUpperCase()}`);
     } else {
-      state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} sat this month out`, icon: '💤', time: 'now', color: COLORS[opponent.color] });
+      const text = `${opponent.name} sat this month out`;
+      state.game.activity.unshift({ id: uid('act'), text, icon: '💤', time: 'now', color: COLORS[opponent.color] });
+      log.push({ icon: '💤', text });
       showToast(`${opponent.name.toUpperCase()} SAT THIS MONTH OUT`);
     }
   });
 
   state.game.opponentsSimulated = true;
+  state.game.lastSimulationLog = log;
   saveState();
 }
 
@@ -1469,7 +1586,7 @@ function resolveDiceRoll(card) {
     const ownedProperties = owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean);
     const property = ownedProperties[(Math.random() * ownedProperties.length) | 0] || state.game.properties.find((item) => item.ownerId === owner.id) || null;
     if (property) {
-      const rentDue = Math.round(property.baseRent * (roll > 3 ? 1.15 : 1));
+      const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner));
       player.cash -= rentDue;
       owner.cash += rentDue;
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
@@ -1528,6 +1645,7 @@ function appendChanceCard() {
   const chanceCard = deck.shift();
   const insertAt = (state.game.turnIndex || 0) + 1;
   state.turnDeckCards.splice(insertAt, 0, { type: 'chance', chanceCard });
+  trackCardDraw('chance');
   saveState();
   renderTurn();
 }
@@ -1548,6 +1666,7 @@ function appendBonusProperties() {
     const property = pickWeightedProperty(propertyPool);
     if (property) {
       state.turnDeckCards.push({ type: 'property', propertyId: property.id });
+      trackCardDraw('property');
     }
   }
   state.game.turnIndex = Math.min((state.game.turnIndex || 0), (state.turnDeckCards.length || 1) - 1);
@@ -1564,7 +1683,9 @@ function renderPortfolio() {
   const player = getCurrentPlayer();
   const propertyCards = (player.properties || []).map((propertyId) => getPropertyById(propertyId)).filter(Boolean);
   const totalValue = propertyCards.reduce((sum, property) => sum + property.currentValue, 0);
-  const monthlyRent = propertyCards.reduce((sum, property) => sum + property.baseRent, 0);
+  const monthlyRent = propertyCards.reduce((sum, property) => sum + getEffectiveRent(property), 0);
+  const showAll = Boolean(state.ui.portfolioShowAll);
+  const listedProperties = showAll ? state.game.properties : propertyCards;
 
   portfolio.innerHTML = `
     <div id="portfolio-content">
@@ -1583,37 +1704,142 @@ function renderPortfolio() {
         <div class="metric-box"><div class="label">Yield</div><strong>${((monthlyRent / Math.max(totalValue + player.cash, 1)) * 100).toFixed(1)}%</strong></div>
       </div>
 
+      <button class="pill-btn show-all-toggle" id="toggle-show-all">${showAll ? '▾ Showing All Properties' : '▸ Show All Properties'}</button>
+
       <div class="property-list">
-        ${propertyCards.length ? propertyCards.map((property) => `
-          <div class="portfolio-item">
-            <div class="thumb" style="background-image:${property.image};"></div>
-            <div>
-              <h4>${property.name}</h4>
-              <div class="sub">${property.area}</div>
-              <div class="sub">${property.tierLabel}</div>
-            </div>
-            <div class="item-actions">
-              <button class="ghost-btn" data-property-detail="${property.id}">View</button>
-              <button class="pill-btn" data-sell-property="${property.id}">Sell</button>
-            </div>
-          </div>
-        `).join('') : '<div class="empty-state">Your empire starts here. Buy your first property during your turn.</div>'}
+        ${listedProperties.length ? listedProperties.map((property) => {
+          const isMine = property.ownerId === player.id;
+          if (!isMine && showAll) return renderLockedPortfolioItem(property);
+          return renderOwnedPortfolioItem(property);
+        }).join('') : '<div class="empty-state">Your empire starts here. Buy your first property during your turn.</div>'}
       </div>
     </div>
   `;
 
+  document.getElementById('toggle-show-all')?.addEventListener('click', () => {
+    state.ui.portfolioShowAll = !state.ui.portfolioShowAll;
+    saveState();
+    renderPortfolio();
+  });
   portfolio.querySelectorAll('[data-property-detail]').forEach((button) => {
     button.addEventListener('click', () => openPropertyDetail(button.dataset.propertyDetail));
   });
   portfolio.querySelectorAll('[data-sell-property]').forEach((button) => {
     button.addEventListener('click', () => sellProperty(button.dataset.sellProperty));
   });
+  portfolio.querySelectorAll('[data-upgrade-property]').forEach((button) => {
+    button.addEventListener('click', (event) => { event.stopPropagation(); upgradeProperty(button.dataset.upgradeProperty); });
+  });
+  portfolio.querySelectorAll('[data-glimpse]').forEach((button) => {
+    button.addEventListener('click', () => openPropertyGlimpse(button.dataset.glimpse));
+  });
+}
+
+function renderUpgradeIcons(level) {
+  if (level >= MAX_UPGRADE_LEVEL) return '<span class="upgrade-icon hotel" title="Hotel">🏨</span>';
+  if (level <= 0) return '<span class="upgrade-icon none">—</span>';
+  return Array.from({ length: level }).map(() => '<span class="upgrade-icon house" title="House">🏠</span>').join('');
+}
+
+function renderOwnedPortfolioItem(property) {
+  const level = property.upgradeLevel || 0;
+  const nextCost = level < MAX_UPGRADE_LEVEL ? getUpgradeCost(property, level + 1) : null;
+  return `
+    <div class="portfolio-item">
+      <div class="thumb" style="background-image:${property.image};"></div>
+      <div>
+        <h4>${property.name}</h4>
+        <div class="sub">${property.area} · ${property.tierLabel}</div>
+        <div class="upgrade-row">
+          <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
+          ${nextCost != null
+            ? `<button class="pill-btn" data-upgrade-property="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+            : '<span class="maxed-badge">MAX LEVEL</span>'}
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="ghost-btn" data-property-detail="${property.id}">View</button>
+        <button class="pill-btn" data-sell-property="${property.id}">Sell</button>
+      </div>
+    </div>
+  `;
+}
+
+// Unowned properties show as a greyed-out silhouette with a "?" — tap Glimpse to scout it
+// without revealing exact numbers.
+function renderLockedPortfolioItem(property) {
+  const ownerName = property.ownerId ? (state.game.players.find((p) => p.id === property.ownerId)?.name || 'Someone') : null;
+  return `
+    <div class="portfolio-item locked-item" data-glimpse="${property.id}">
+      <div class="thumb locked-thumb" style="background-image:${property.image};"><span class="lock-mark">?</span></div>
+      <div>
+        <h4 class="locked-name">${property.tierLabel} Property</h4>
+        <div class="sub">${ownerName ? `Owned by ${ownerName}` : 'Available'}</div>
+      </div>
+      <div class="item-actions">
+        <button class="ghost-btn" data-glimpse="${property.id}">Glimpse</button>
+      </div>
+    </div>
+  `;
+}
+
+// Spends cash to raise a property's upgrade level (max 5), boosting its effective rent.
+function upgradeProperty(propertyId) {
+  const property = getPropertyById(propertyId);
+  const player = getCurrentPlayer();
+  if (!property || property.ownerId !== player.id) return;
+  const level = property.upgradeLevel || 0;
+  if (level >= MAX_UPGRADE_LEVEL) return;
+  const cost = getUpgradeCost(property, level + 1);
+  if (player.cash < cost) {
+    showToast('Insufficient cash to upgrade this property.');
+    haptic('warning');
+    return;
+  }
+  player.cash -= cost;
+  property.upgradeLevel = level + 1;
+  const label = property.upgradeLevel >= MAX_UPGRADE_LEVEL ? 'a Hotel' : `Level ${property.upgradeLevel}`;
+  state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: 'now', color: COLORS[player.color] });
+  showToast(`UPGRADED TO ${label.toUpperCase()}`);
+  haptic('medium');
+  saveState();
+  renderAll();
+}
+
+// A limited "scouting" preview of a property nobody (or someone else) owns — shows the photo
+// and category but hides exact numbers until you own it.
+function openPropertyGlimpse(propertyId) {
+  const property = getPropertyById(propertyId);
+  if (!property) return;
+  const rarity = RARITY_STYLES[property.rarity] || RARITY_STYLES.Common;
+  const ownerName = property.ownerId ? (state.game.players.find((p) => p.id === property.ownerId)?.name || 'Someone') : null;
+  const modal = `
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <div class="top">
+          <strong>${property.tierLabel} Property</strong>
+          <button type="button" class="ghost-btn" data-close-modal="true">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="property-art" style="height: 180px; background-image:${property.image}; border-radius:16px; margin-bottom: 12px; position:relative;">
+            <span class="rarity-ribbon" style="color:${rarity.color}; border-color:${rarity.color}; position:absolute; top:10px; right:10px;">${rarity.label}</span>
+          </div>
+          <div class="resource-badges"><span>${property.category}</span><span>${ownerName ? `Owned by ${ownerName}` : 'Available to buy'}</span></div>
+          <div class="desc" style="margin-top: 12px;">Exact value, rent and yield stay hidden until you own this one — you're just scouting.</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-root').innerHTML = modal;
+  document.querySelector('[data-close-modal]')?.addEventListener('click', () => { document.getElementById('modal-root').innerHTML = ''; });
 }
 
 function openPropertyDetail(propertyId) {
   const property = getPropertyById(propertyId);
   if (!property) return;
   const player = getCurrentPlayer();
+  const level = property.upgradeLevel || 0;
+  const nextCost = level < MAX_UPGRADE_LEVEL ? getUpgradeCost(property, level + 1) : null;
   const modal = `
     <div class="modal-backdrop">
       <div class="modal-card">
@@ -1625,8 +1851,14 @@ function openPropertyDetail(propertyId) {
           <div class="property-art" style="height: 180px; background-image:${property.image}; border-radius:16px; margin-bottom: 12px;"></div>
           <div class="stats-row">
             <div class="stat-block"><span class="label">Game Value</span><strong>${formatMoney(property.gameValue)}</strong></div>
-            <div class="stat-block"><span class="label">Rent</span><strong>${formatMoney(property.baseRent)}</strong></div>
+            <div class="stat-block"><span class="label">Rent</span><strong>${formatMoney(getEffectiveRent(property))}</strong></div>
             <div class="stat-block"><span class="label">Yield</span><strong>${property.yield}%</strong></div>
+          </div>
+          <div class="upgrade-row" style="margin-top:12px;">
+            <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
+            ${nextCost != null
+              ? `<button class="pill-btn" data-action="property-upgrade" data-id="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+              : '<span class="maxed-badge">MAX LEVEL</span>'}
           </div>
           <div class="desc" style="margin-top: 12px;">${property.description}</div>
           <div class="turn-actions" style="margin-top: 14px;">
@@ -1642,6 +1874,7 @@ function openPropertyDetail(propertyId) {
   if (close) close.addEventListener('click', () => document.getElementById('modal-root').innerHTML = '');
   document.querySelector('[data-action="property-sell"]')?.addEventListener('click', () => sellProperty(property.id));
   document.querySelector('[data-action="property-offer"]')?.addEventListener('click', () => openOfferBuilder(property.id));
+  document.querySelector('[data-action="property-upgrade"]')?.addEventListener('click', () => { upgradeProperty(property.id); document.getElementById('modal-root').innerHTML = ''; });
 }
 
 function openOfferBuilder(propertyId) {
@@ -1709,10 +1942,28 @@ function sellProperty(propertyId) {
 function renderLeaderboard() {
   const leaderboard = document.getElementById('view-leaderboard');
   if (!state.game) {
-    leaderboard.innerHTML = '<div class="empty-state">Leaderboard unavailable.</div>';
+    leaderboard.innerHTML = '<div class="empty-state">Stats unavailable.</div>';
     return;
   }
   const players = [...state.game.players].sort((a, b) => getPlayerNetWorth(b) - getPlayerNetWorth(a));
+  const human = state.game.players.find((p) => p.isHuman) || players[0];
+
+  const deltas = human.roundDeltas || [];
+  const gains = deltas.filter((d) => d > 0);
+  const losses = deltas.filter((d) => d < 0);
+  const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : 0;
+  const avgLoss = losses.length ? Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length) : 0;
+
+  const ownedProperties = state.game.properties.filter((p) => p.ownerId !== null);
+  const availableProperties = state.game.properties.filter((p) => p.ownerId === null);
+  const mostValuableOwned = ownedProperties.reduce((best, p) => (!best || p.currentValue > best.currentValue ? p : best), null);
+  const mostValuableAvailable = availableProperties.reduce((best, p) => (!best || p.currentValue > best.currentValue ? p : best), null);
+  const mostValuableOwnedOwner = mostValuableOwned ? state.game.players.find((p) => p.id === mostValuableOwned.ownerId) : null;
+
+  const cardLabels = { property: 'Property', dice: 'Dice', impulse: 'Impulse', chance: 'Chance' };
+  const cardEntries = Object.entries(state.game.cardDrawCounts || {}).filter(([, count]) => count > 0);
+  const mostCommonCard = cardEntries.length ? cardEntries.reduce((best, entry) => (entry[1] > best[1] ? entry : best)) : null;
+  const leastCommonCard = cardEntries.length ? cardEntries.reduce((best, entry) => (entry[1] < best[1] ? entry : best)) : null;
 
   leaderboard.innerHTML = `
     <div class="leaderboard-card" style="padding:16px;">
@@ -1729,9 +1980,34 @@ function renderLeaderboard() {
               </div>
             </div>
             <strong>${formatMoney(getPlayerNetWorth(player))}</strong>
-            <span>${index === 0 ? '↑12%' : index === 1 ? '↑8%' : '↑4%'}</span>
           </div>
         `).join('')}
+      </div>
+    </div>
+
+    <div class="leaderboard-card" style="padding:16px; margin-top:12px;">
+      <h2 style="margin:0 0 14px;">Stats</h2>
+      <div class="metric-row">
+        <div class="metric-box"><div class="label">Avg Gain / Round</div><strong class="gain-text">+${formatMoney(avgGain)}</strong></div>
+        <div class="metric-box"><div class="label">Avg Loss / Round</div><strong class="loss-text">−${formatMoney(avgLoss)}</strong></div>
+      </div>
+      <div class="stat-list">
+        <div class="stat-list-row">
+          <span>Most valuable property</span>
+          <strong>${mostValuableOwned ? `${mostValuableOwned.name} (${mostValuableOwnedOwner?.name || 'Unowned'})` : '—'}</strong>
+        </div>
+        <div class="stat-list-row">
+          <span>Most valuable available</span>
+          <strong>${mostValuableAvailable ? `${mostValuableAvailable.name} · ${formatMoney(mostValuableAvailable.purchasePrice)}` : '—'}</strong>
+        </div>
+        <div class="stat-list-row">
+          <span>Most drawn card</span>
+          <strong>${mostCommonCard ? `${cardLabels[mostCommonCard[0]] || mostCommonCard[0]} (${mostCommonCard[1]})` : '—'}</strong>
+        </div>
+        <div class="stat-list-row">
+          <span>Least drawn card</span>
+          <strong>${leastCommonCard ? `${cardLabels[leastCommonCard[0]] || leastCommonCard[0]} (${leastCommonCard[1]})` : '—'}</strong>
+        </div>
       </div>
     </div>
   `;
