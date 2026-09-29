@@ -969,6 +969,17 @@ function getHappinessRentMultiplier(player) {
   return 1 + (clamp(Number(player?.happiness || 0), 0, 100) / 100) * 0.2;
 }
 
+// Quick visual read on mood for the Home screen's Happiness display.
+function getHappinessEmoji(happiness) {
+  const value = clamp(Number(happiness || 0), 0, 100);
+  if (value >= 90) return '🤩';
+  if (value >= 70) return '😄';
+  if (value >= 50) return '🙂';
+  if (value >= 30) return '😐';
+  if (value >= 15) return '😟';
+  return '😢';
+}
+
 const MAX_UPGRADE_LEVEL = 5;
 // Cost scales with how valuable the property already is (Monopoly-style: Dark Blue costs far
 // more per level than Brown), while the rent boost per level scales the same way so the
@@ -1059,12 +1070,12 @@ function renderHome() {
         </div>
         <div class="stat-card">
           <div class="kicker">Happiness</div>
-          <strong>${Math.round(happiness)}%</strong>
+          <strong>${getHappinessEmoji(happiness)} ${Math.round(happiness)}%</strong>
         </div>
       </div>
 
       <div class="happiness-wrap">
-        <div class="happiness-header"><span>Happiness <small>(+${Math.round((getHappinessRentMultiplier(player) - 1) * 100)}% rent)</small></span><strong>${Math.round(happiness)}%</strong></div>
+        <div class="happiness-header"><span>${getHappinessEmoji(happiness)} Happiness <small>(+${Math.round((getHappinessRentMultiplier(player) - 1) * 100)}% rent)</small></span><strong>${Math.round(happiness)}%</strong></div>
         <div class="happiness-bar"><span style="width:${happiness}%"></span></div>
       </div>
     </div>
@@ -1660,7 +1671,7 @@ function resolveDiceRoll(card) {
     const choice = Math.random() > 0.5 ? 'chance' : 'properties';
     if (choice === 'chance') {
       showToast('EVEN NUMBER! Draw a Chance card');
-      appendChanceCard();
+      appendChanceCard(true);
     } else {
       showToast('EVEN NUMBER! See 2 more properties');
       appendBonusProperties();
@@ -1671,25 +1682,32 @@ function resolveDiceRoll(card) {
   renderAll();
 }
 
+// Negative = costs money/value. Dice-triggered Chance cards only hit the roller when
+// positive; when negative they hit every OTHER player instead (see resolveChanceCard).
+function isNegativeChanceCard(card) {
+  return card.effect === 'cash-out' || card.effect === 'market-drop';
+}
+
 function applyChanceEffect(card, player) {
+  const who = player.isHuman ? 'YOU' : player.name.toUpperCase();
   if (card.effect === 'cash-in') {
     player.cash += card.amount;
-    showToast(`+${formatMoney(card.amount)}`);
+    showToast(`${who} RECEIVED ${formatMoney(card.amount)}`);
   }
   if (card.effect === 'cash-out') {
     player.cash -= card.amount;
-    showToast(`-${formatMoney(card.amount)}`);
+    showToast(`${who} PAID ${formatMoney(card.amount)}`);
     handleCashShortfall(player);
   }
   if (card.type === 'KEEP') {
     player.savedCards.push(card);
-    showToast('SAVED CARD +1');
+    if (player.isHuman) showToast('SAVED CARD +1');
   }
   if (card.effect === 'market-bonus' || card.effect === 'market-drop') {
     state.game.properties.forEach((property) => {
       if (property.ownerId === player.id) property.currentValue = property.currentValue * (1 + card.value / 100);
     });
-    showToast(card.effect === 'market-bonus' ? 'Market Boom' : 'Market Downturn');
+    showToast(`${who}: ${card.effect === 'market-bonus' ? 'Market Boom' : 'Market Downturn'}`);
   }
   if (card.effect === 'community') {
     state.game.properties.forEach((property) => {
@@ -1701,11 +1719,13 @@ function applyChanceEffect(card, player) {
 }
 
 // Inserts a real, swipeable Chance card into the deck instead of resolving it instantly.
-function appendChanceCard() {
+// `fromDiceRoll` tags the card so resolveChanceCard() knows to redirect negative effects
+// onto every other player instead of the roller (positive ones still only affect the roller).
+function appendChanceCard(fromDiceRoll = false) {
   const chanceCard = drawChanceCard();
   if (!chanceCard) return;
   const insertAt = (state.game.turnIndex || 0) + 1;
-  state.turnDeckCards.splice(insertAt, 0, { type: 'chance', chanceCard });
+  state.turnDeckCards.splice(insertAt, 0, { type: 'chance', chanceCard, fromDiceRoll });
   trackCardDraw('chance');
   saveState();
   renderTurn();
@@ -1715,7 +1735,16 @@ function resolveChanceCard(index) {
   const turnCard = state.turnDeckCards[index];
   if (!turnCard || !turnCard.chanceCard) return;
   const player = getCurrentPlayer();
-  applyChanceEffect(turnCard.chanceCard, player);
+  const card = turnCard.chanceCard;
+
+  if (turnCard.fromDiceRoll && isNegativeChanceCard(card)) {
+    const others = state.game.players.filter((opponent) => opponent.id !== player.id);
+    others.forEach((opponent) => applyChanceEffect(card, opponent));
+    showToast(`EVERYONE ELSE HIT: ${card.name.toUpperCase()}`);
+  } else {
+    applyChanceEffect(card, player);
+  }
+
   saveState();
   renderAll();
   setTimeout(() => advanceTurnCard(), 220);
