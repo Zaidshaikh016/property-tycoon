@@ -370,6 +370,7 @@ const state = {
     sound: false,
     haptics: true,
     reduceMotion: false,
+    ttsEnabled: false,
     location: true,
     difficulty: 'normal',
     localProperties: 50,
@@ -1141,6 +1142,7 @@ function animateMoneyNumbers() {
 
 let idleHintTimer = null;
 let pendingTurnBanner = false;
+let lastSpokenTurnIndex = -1;
 
 function clearIdleHint() {
   if (idleHintTimer) {
@@ -1179,9 +1181,14 @@ function renderTurn() {
         <span>Month ${state.game.month}</span>
         <span>${activeIndex + 1} / ${cards.length}</span>
       </div>
+      <div class="turn-balance-row">
+        <div class="turn-balance-pill"><span class="balance-icon">💰</span><span data-money="${currentPlayer.cash}">${formatMoney(currentPlayer.cash)}</span></div>
+        <button class="turn-summary-btn" id="turn-summary-btn" type="button">🔊 Last Turn</button>
+      </div>
       <div class="turn-feed" id="turn-feed-root"></div>
     </div>
   `;
+  document.getElementById('turn-summary-btn')?.addEventListener('click', speakLastTurnSummary);
 
   const feedRoot = document.getElementById('turn-feed-root');
   if (!cards.length) {
@@ -1209,7 +1216,13 @@ function renderTurn() {
     if (offset === 0) {
       const hint = document.createElement('div');
       hint.className = 'swipe-hint';
-      hint.innerHTML = '<span class="swipe-hint-arrow">⌃</span><span>Swipe up</span>';
+      if (card.type === 'chance') {
+        hint.innerHTML = '<span>Tap Continue above to proceed</span>';
+      } else if (card.type === 'dice' && !card.rolled) {
+        hint.innerHTML = '<span>Roll the dice above first</span>';
+      } else {
+        hint.innerHTML = '<span class="swipe-hint-arrow">⌃</span><span>Swipe up</span>';
+      }
       cardEl.appendChild(hint);
       topCardEl = cardEl;
     }
@@ -1217,6 +1230,10 @@ function renderTurn() {
     feedRoot.appendChild(cardEl);
   });
   if (topCardEl) attachTurnCardInteractions(topCardEl, cards[activeIndex], activeIndex, cards.length, peekCardEl);
+  if (topCardEl && state.settings.ttsEnabled && lastSpokenTurnIndex !== activeIndex) {
+    lastSpokenTurnIndex = activeIndex;
+    speak(getCardSpeechText(topCardEl));
+  }
 
   const progressDots = Array.from({ length: cards.length }).map((_, i) => `<span class="dot ${i === activeIndex ? 'active' : ''}"></span>`).join('');
   const progressBar = document.createElement('div');
@@ -1282,6 +1299,7 @@ function handleYourTurnClick() {
   state.game.turnCompleted = false;
   state.game.opponentsSimulated = false;
   state.game.lastSimulationLog = [];
+  lastSpokenTurnIndex = -1;
   saveState();
   setView('home');
   renderAll();
@@ -1546,6 +1564,13 @@ function attachTurnCardInteractions(cardEl, card, index, total, peekEl) {
         settlePeek(false, 260, 'cubic-bezier(.34,1.56,.64,1)');
         return;
       }
+      if (card.type === 'chance') {
+        showToast('Tap Continue to accept your Chance card first!');
+        haptic('warning');
+        resetCardPosition(cardEl);
+        settlePeek(false, 260, 'cubic-bezier(.34,1.56,.64,1)');
+        return;
+      }
       // Velocity-based duration — a fast flick snaps away quicker than a slow deliberate drag,
       // matching the momentum feel of TikTok's feed.
       const duration = Math.round(clamp(300 - clamp(Math.abs(velocity), 0, 2.4) * 90, 130, 260));
@@ -1657,6 +1682,7 @@ function buyPropertyFromTurn(propertyId) {
   haptic('medium');
   saveState();
   renderAll();
+  showTurnCashDelta(-property.purchasePrice);
   setTimeout(() => advanceTurnCard(), 200);
 }
 
@@ -1677,6 +1703,7 @@ function buyImpulseAsset(assetId) {
   haptic('soft');
   saveState();
   renderAll();
+  showTurnCashDelta(-asset.price);
   setTimeout(() => advanceTurnCard(), 260);
 }
 
@@ -1699,6 +1726,10 @@ function resolveDiceRoll(card) {
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
       showToast(`YOU ROLLED ${roll} • RENT!`);
       handleCashShortfall(player);
+      saveState();
+      renderAll();
+      showTurnCashDelta(-rentDue);
+      return;
     }
   } else {
     const choice = Math.random() > 0.5 ? 'chance' : 'properties';
@@ -1723,14 +1754,17 @@ function isNegativeChanceCard(card) {
 
 function applyChanceEffect(card, player) {
   const who = player.isHuman ? 'YOU' : player.name.toUpperCase();
+  const isCurrentPlayer = player.id === getCurrentPlayer().id;
   if (card.effect === 'cash-in') {
     player.cash += card.amount;
     showToast(`${who} RECEIVED ${formatMoney(card.amount)}`);
+    if (isCurrentPlayer) showTurnCashDelta(card.amount);
   }
   if (card.effect === 'cash-out') {
     player.cash -= card.amount;
     showToast(`${who} PAID ${formatMoney(card.amount)}`);
     handleCashShortfall(player);
+    if (isCurrentPlayer) showTurnCashDelta(-card.amount);
   }
   if (card.type === 'KEEP') {
     player.savedCards.push(card);
@@ -2196,20 +2230,108 @@ function renderLeaderboard() {
   `;
 }
 
+// Resolves state.settings.theme ('light'/'dark'/'system') to an actual data-theme attribute
+// on <html> so the CSS variable overrides in styles.css take effect. Re-runs automatically
+// when the OS theme changes while 'system' is selected.
+let systemThemeQuery = null;
+function applyTheme() {
+  const theme = state.settings.theme || 'dark';
+  const resolved = theme === 'system'
+    ? (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : theme;
+  document.documentElement.dataset.theme = resolved;
+  if (theme === 'system' && window.matchMedia) {
+    if (!systemThemeQuery) {
+      systemThemeQuery = window.matchMedia('(prefers-color-scheme: light)');
+      systemThemeQuery.addEventListener('change', () => { if (state.settings.theme === 'system') applyTheme(); });
+    }
+  }
+}
+
+// Reads text aloud via the device's built-in speech synthesis, gated on the Accessibility
+// toggle in Settings (except when `force` is true, e.g. an explicit "Read summary" tap).
+function speak(text, { force = false } = {}) {
+  if (!text || !('speechSynthesis' in window)) return;
+  if (!force && !state.settings.ttsEnabled) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+// Builds a plain-text summary of whatever's rendered on a turn card (works for every card
+// type without needing type-specific data plumbing) for the text-to-speech accessibility toggle.
+function getCardSpeechText(cardEl) {
+  const typeTag = cardEl.querySelector('.type-tag')?.textContent?.trim() || 'Card';
+  const title = cardEl.querySelector('h4')?.textContent?.trim();
+  const desc = cardEl.querySelector('.desc')?.textContent?.trim();
+  const stats = Array.from(cardEl.querySelectorAll('.stat-block')).map((block) => {
+    const label = block.querySelector('.label')?.textContent?.trim();
+    const value = block.querySelector('strong')?.textContent?.trim();
+    return label && value ? `${label} ${value}` : '';
+  }).filter(Boolean).join(', ');
+  if (cardEl.querySelector('.dice-card')) {
+    const rolled = cardEl.querySelector('.roll-btn')?.disabled;
+    return rolled ? 'Dice rolled. Swipe up to continue.' : 'Dice Roll card. Roll the dice to see if you pay rent or get a bonus.';
+  }
+  return [typeTag, title, stats, desc].filter(Boolean).join('. ');
+}
+
+// Reads the opponents' last-turn activity aloud so the player can listen while browsing
+// their own turn cards. Always speaks (force: true) regardless of the TTS settings toggle,
+// since this is an explicit action the player chose by tapping the button.
+function speakLastTurnSummary() {
+  const log = state.game?.lastSimulationLog || [];
+  const text = log.length
+    ? `Here's what happened last turn. ${log.map((item) => item.text).join('. ')}.`
+    : "There's nothing to report yet — this is your first turn.";
+  speak(text, { force: true });
+  showToast('🔊 Reading last turn summary…');
+}
+
+// Floating +/-£ indicator spawned near the Turn screen's balance pill on every cash change.
+// Appended to <body> (not the per-card DOM) so it survives the re-render that happens when
+// a card advances a fraction of a second later.
+function showTurnCashDelta(amount) {
+  if (!amount) return;
+  const pill = document.querySelector('.turn-balance-pill');
+  if (!pill) return;
+  const rect = pill.getBoundingClientRect();
+  const isGain = amount > 0;
+  const el = document.createElement('div');
+  el.className = `cash-delta-float ${isGain ? 'gain' : 'loss'}`;
+  el.style.left = `${rect.left + rect.width / 2}px`;
+  el.style.top = `${rect.top}px`;
+  el.innerHTML = `<span>${isGain ? '▲' : '▼'}</span><span>${isGain ? '+' : '-'}${formatMoney(Math.abs(amount))}</span>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('rise'));
+  setTimeout(() => el.classList.add('fade-out'), 950);
+  setTimeout(() => el.remove(), 1300);
+}
+
 function renderSettings() {
   const settings = document.getElementById('view-settings');
+  const ttsSupported = 'speechSynthesis' in window;
   settings.innerHTML = `
     <div class="settings-card">
       <div class="settings-section">
         <h3>Appearance</h3>
-        <div class="setting-row"><span>Light</span><div class="switch ${state.settings.theme === 'light' ? 'on' : ''}"></div></div>
-        <div class="setting-row"><span>Dark</span><div class="switch ${state.settings.theme === 'dark' ? 'on' : ''}"></div></div>
-        <div class="setting-row"><span>System</span><div class="switch ${state.settings.theme === 'system' ? 'on' : ''}"></div></div>
+        <div class="setting-row"><span>Light</span><div class="switch ${state.settings.theme === 'light' ? 'on' : ''}" data-set-theme="light"></div></div>
+        <div class="setting-row"><span>Dark</span><div class="switch ${state.settings.theme === 'dark' ? 'on' : ''}" data-set-theme="dark"></div></div>
+        <div class="setting-row"><span>System</span><div class="switch ${state.settings.theme === 'system' ? 'on' : ''}" data-set-theme="system"></div></div>
       </div>
       <div class="settings-section">
         <h3>Sound</h3>
         <div class="setting-row"><span>Haptic feedback</span><div class="switch ${state.settings.haptics ? 'on' : ''}" data-toggle="haptics"></div></div>
         <div class="setting-row"><span>Reduced motion</span><div class="switch ${state.settings.reduceMotion ? 'on' : ''}" data-toggle="reduceMotion"></div></div>
+      </div>
+      <div class="settings-section">
+        <h3>Accessibility</h3>
+        <div class="setting-row">
+          <span>Text-to-speech${ttsSupported ? '' : ' (unsupported)'}</span>
+          <div class="switch ${state.settings.ttsEnabled ? 'on' : ''}" data-toggle="ttsEnabled" ${ttsSupported ? '' : 'style="opacity:0.4; pointer-events:none;"'}></div>
+        </div>
+        <div class="desc" style="color:var(--text-soft); font-size:0.78rem; margin-top:-4px;">Reads each card aloud using your device's built-in voice as it appears in your Turn deck.</div>
       </div>
       <div class="settings-section">
         <h3>Game</h3>
@@ -2227,6 +2349,14 @@ function renderSettings() {
     switchEl.addEventListener('click', () => {
       const key = switchEl.dataset.toggle;
       state.settings[key] = !state.settings[key];
+      saveState();
+      renderSettings();
+    });
+  });
+  settings.querySelectorAll('[data-set-theme]').forEach((switchEl) => {
+    switchEl.addEventListener('click', () => {
+      state.settings.theme = switchEl.dataset.setTheme;
+      applyTheme();
       saveState();
       renderSettings();
     });
@@ -2269,6 +2399,7 @@ function resetGame() {
 
 function initializeApp() {
   hydrateState();
+  applyTheme();
   if (!state.onboardingComplete) {
     createOnboardingStep();
     onboardingScreen.classList.remove('hidden');
