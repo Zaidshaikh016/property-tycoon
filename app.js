@@ -774,7 +774,7 @@ function hideLoadingOverlay() {
 async function tryGenerateLocations(postcode, count) {
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), 50000);
     const response = await fetch('/api/generate-locations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

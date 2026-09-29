@@ -242,51 +242,68 @@ async function attachImages(places, area) {
     return places.map((place) => ({ ...place, area, description: describePlace(place, area) }));
   }
 
+  // Real AI images are slow (10-20s+ each) and a request for 50-100 properties would blow
+  // way past any serverless function time limit. Generate real photos for a handful of the
+  // most notable places; every place still gets a real name/category — the rest just use
+  // the client's gradient placeholder instead of a photo.
+  const IMAGE_CAP = 8;
+  const withDescriptions = places.map((place) => ({ ...place, area, description: describePlace(place, area) }));
+  const toIllustrate = withDescriptions.slice(0, IMAGE_CAP);
+  const rest = withDescriptions.slice(IMAGE_CAP);
+
   // Generate images concurrently (small batches) so the whole request doesn't get killed by
   // the platform's function-duration limit while waiting on many sequential image calls.
   const CONCURRENCY = 4;
-  const results = new Array(places.length);
+  const illustrated = new Array(toIllustrate.length);
   let cursor = 0;
 
   async function worker() {
-    while (cursor < places.length) {
+    while (cursor < toIllustrate.length) {
       const index = cursor++;
-      const place = places[index];
-      const description = describePlace(place, area);
+      const place = toIllustrate[index];
       let imageUrl = null;
       try {
         imageUrl = await generateImage(apiKey, place, area);
       } catch (err) {
         console.warn(`Image generation failed for ${place.name}:`, err.message);
       }
-      results[index] = { ...place, area, description, imageUrl };
+      illustrated[index] = { ...place, imageUrl };
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, places.length) }, worker));
-  return results;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, toIllustrate.length) }, worker));
+  return [...illustrated, ...rest];
 }
 
 async function generateImage(apiKey, place, area) {
   const prompt = `A realistic, high-quality photo of ${place.name}, a ${place.category.toLowerCase()} in ${area}, UK. Street-level view, natural lighting, no text or logos.`;
-  const response = await fetch(OPENAI_IMAGES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'gpt-image-1',
-      prompt,
-      size: '1024x1024',
-      n: 1
-    })
-  });
-  if (!response.ok) throw new Error(`OpenAI image API responded with ${response.status}`);
-  const data = await response.json();
-  const b64 = data?.data?.[0]?.b64_json;
-  const url = data?.data?.[0]?.url;
-  return url || (b64 ? `data:image/png;base64,${b64}` : null);
+  const controller = new AbortController();
+  // Never let one slow image generation hold up (or time out) the whole request — skip it
+  // and fall back to the client's gradient placeholder instead.
+  const timeoutId = setTimeout(() => controller.abort(), 18000);
+  try {
+    const response = await fetch(OPENAI_IMAGES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-image-1',
+        prompt,
+        size: '1024x1024',
+        n: 1
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`OpenAI image API responded with ${response.status}`);
+    const data = await response.json();
+    const b64 = data?.data?.[0]?.b64_json;
+    const url = data?.data?.[0]?.url;
+    return url || (b64 ? `data:image/png;base64,${b64}` : null);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function describePlace(place, area) {
