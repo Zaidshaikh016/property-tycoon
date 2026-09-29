@@ -1193,6 +1193,8 @@ function renderTurn() {
   // swiped away is left out entirely so it can never show through/overlap the current card.
   // Stacked cards stay fully opaque (dimmed via filter only) so text never bleeds through the top card.
   const STACK_DEPTH = 2;
+  let topCardEl = null;
+  let peekCardEl = null;
   cards.forEach((card, index) => {
     const offset = index - activeIndex;
     if (offset < 0 || offset > STACK_DEPTH) return;
@@ -1209,10 +1211,12 @@ function renderTurn() {
       hint.className = 'swipe-hint';
       hint.innerHTML = '<span class="swipe-hint-arrow">⌃</span><span>Swipe up</span>';
       cardEl.appendChild(hint);
-      attachTurnCardInteractions(cardEl, card, index, cards.length);
+      topCardEl = cardEl;
     }
+    if (offset === 1) peekCardEl = cardEl;
     feedRoot.appendChild(cardEl);
   });
+  if (topCardEl) attachTurnCardInteractions(topCardEl, cards[activeIndex], activeIndex, cards.length, peekCardEl);
 
   const progressDots = Array.from({ length: cards.length }).map((_, i) => `<span class="dot ${i === activeIndex ? 'active' : ''}"></span>`).join('');
   const progressBar = document.createElement('div');
@@ -1455,7 +1459,13 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
   return '<div class="empty-state">Card unavailable.</div>';
 }
 
-function attachTurnCardInteractions(cardEl, card, index, total) {
+// PEEK_OFFSET/PEEK_SCALE mirror the offset*22 / 1-offset*0.055 resting transform renderTurn()
+// gives the card directly behind the active one (offset === 1).
+const PEEK_OFFSET = 22;
+const PEEK_SCALE = 0.945;
+const PEEK_BRIGHTNESS = 0.84;
+
+function attachTurnCardInteractions(cardEl, card, index, total, peekEl) {
   const actionButtons = cardEl.querySelectorAll('[data-action]');
   actionButtons.forEach((btn) => {
     btn.addEventListener('click', (event) => {
@@ -1472,13 +1482,21 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
   let drag = null;
   const skipStamp = cardEl.querySelector('.skip-stamp');
 
+  function settlePeek(toActive, duration, easing) {
+    if (!peekEl) return;
+    peekEl.style.transition = `transform ${duration}ms ${easing}, filter ${duration}ms ease`;
+    peekEl.style.transform = toActive ? 'translateY(0px) scale(1)' : `translateY(${PEEK_OFFSET}px) scale(${PEEK_SCALE})`;
+    peekEl.style.filter = toActive ? 'none' : `brightness(${PEEK_BRIGHTNESS})`;
+  }
+
   cardEl.addEventListener('pointerdown', (event) => {
     if (!event.isPrimary) return;
     // Don't hijack taps on buttons (Buy/Roll/Continue) as drag gestures.
     if (event.target.closest('button')) return;
     clearIdleHint();
-    cardEl.setPointerCapture(event.pointerId);
+    try { cardEl.setPointerCapture(event.pointerId); } catch { /* unsupported pointer id, drag still works via listeners on the element */ }
     cardEl.classList.add('dragging');
+    if (peekEl) peekEl.classList.add('dragging');
     drag = { startY: event.clientY, lastY: event.clientY, lastTime: performance.now(), velocity: 0, diff: 0 };
   });
 
@@ -1490,10 +1508,17 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
     drag.lastY = event.clientY;
     drag.lastTime = now;
     drag.diff = event.clientY - drag.startY;
-    const rotation = drag.diff / 26;
-    cardEl.style.transform = `translateY(${drag.diff}px) rotate(${rotation}deg) scale(${1 - Math.min(Math.abs(drag.diff) / 3000, 0.06)})`;
-    cardEl.style.opacity = String(1 - Math.min(Math.abs(drag.diff) / 500, 0.35));
-    // Reveal the "Skip" stamp the further you drag upward, like Tinder's swipe stamps.
+    // Pure vertical motion (no tilt) reads as a TikTok-style feed swipe rather than a Tinder card flick.
+    cardEl.style.transform = `translateY(${drag.diff}px) scale(${1 - Math.min(Math.abs(drag.diff) / 2600, 0.05)})`;
+    cardEl.style.opacity = String(1 - Math.min(Math.abs(drag.diff) / 640, 0.22));
+    // The card behind rises up and grows to fill in as you drag upward — the next-clip-peeking-through feel.
+    if (peekEl) {
+      const dragUp = Math.max(-drag.diff, 0);
+      const progress = clamp(dragUp / 180, 0, 1);
+      peekEl.style.transform = `translateY(${PEEK_OFFSET * (1 - progress)}px) scale(${PEEK_SCALE + (1 - PEEK_SCALE) * progress})`;
+      peekEl.style.filter = `brightness(${PEEK_BRIGHTNESS + (1 - PEEK_BRIGHTNESS) * progress})`;
+    }
+    // Reveal the "Skip" stamp the further you drag upward.
     if (skipStamp) {
       const progress = drag.diff < 0 ? Math.min(Math.abs(drag.diff) / 140, 1) : 0;
       skipStamp.style.opacity = String(progress);
@@ -1504,6 +1529,7 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
   function endDrag(event) {
     if (!drag) return;
     cardEl.classList.remove('dragging');
+    if (peekEl) peekEl.classList.remove('dragging');
     if (event?.pointerId != null && cardEl.hasPointerCapture?.(event.pointerId)) {
       cardEl.releasePointerCapture(event.pointerId);
     }
@@ -1516,14 +1542,21 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
       if (card.type === 'dice' && !card.rolled) {
         showToast('Roll the dice first!');
         haptic('warning');
-        resetCardPosition(cardEl, index);
+        resetCardPosition(cardEl);
+        settlePeek(false, 260, 'cubic-bezier(.34,1.56,.64,1)');
         return;
       }
-      flyCardAway(cardEl, -1, () => advanceTurnCard());
+      // Velocity-based duration — a fast flick snaps away quicker than a slow deliberate drag,
+      // matching the momentum feel of TikTok's feed.
+      const duration = Math.round(clamp(300 - clamp(Math.abs(velocity), 0, 2.4) * 90, 130, 260));
+      flyCardAway(cardEl, -1, duration, () => advanceTurnCard());
+      settlePeek(true, duration, 'cubic-bezier(.16,1,.3,1)');
     } else if (wantsBack) {
-      flyCardAway(cardEl, 1, () => previousTurnCard());
+      flyCardAway(cardEl, 1, 240, () => previousTurnCard());
+      settlePeek(false, 240, 'cubic-bezier(.2,.8,.2,1)');
     } else {
-      resetCardPosition(cardEl, index);
+      resetCardPosition(cardEl);
+      settlePeek(false, 320, 'cubic-bezier(.34,1.56,.64,1)');
     }
   }
 
@@ -1562,19 +1595,19 @@ function animateDiceRoll(cardEl, card, onComplete) {
   tick();
 }
 
-function flyCardAway(el, direction, onDone) {
+function flyCardAway(el, direction, duration, onDone) {
   el.classList.add('flying');
-  el.style.transition = 'transform 260ms cubic-bezier(.2,.7,.3,1), opacity 220ms ease';
-  el.style.transform = `translateY(${direction * -130}%) rotate(${direction * -14}deg)`;
+  // Pure vertical exit (no rotation) to match the TikTok-style feed motion.
+  el.style.transition = `transform ${duration}ms cubic-bezier(.16,1,.3,1), opacity ${Math.round(duration * 0.85)}ms ease`;
+  el.style.transform = `translateY(${direction * -130}%)`;
   el.style.opacity = '0';
-  setTimeout(onDone, 220);
+  setTimeout(onDone, Math.round(duration * 0.85));
 }
 
-function resetCardPosition(el, index) {
-  const activeIndex = state.game.turnIndex || 0;
-  const offset = index - activeIndex;
-  el.style.transition = 'transform 260ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease';
-  el.style.transform = `translateY(${offset * 22}px) scale(${1 - offset * 0.055})`;
+function resetCardPosition(el) {
+  // The active card always rests at offset 0 — full size, centred, no dim.
+  el.style.transition = 'transform 320ms cubic-bezier(.34,1.56,.64,1), opacity 220ms ease';
+  el.style.transform = 'translateY(0px) scale(1)';
   el.style.opacity = '1';
   const skipStamp = el.querySelector('.skip-stamp');
   if (skipStamp) {
