@@ -68,7 +68,7 @@ function createPropertyPool(count = 50) {
       const name = names[index % names.length] + (i > 0 ? ` ${i + 1}` : '');
       const category = categories[(index + i) % categories.length];
       const area = areas[(index + i) % areas.length];
-      const distance = (Math.random() * 4.8 + 0.4).toFixed(1);
+      const distance = (Math.random() * 3.2 + 0.3).toFixed(1);
       const gameValue = Math.round((tierDef.base + Math.random() * tierDef.base * 1.8) + (Math.random() * 600));
       const purchasePrice = Math.round(gameValue * (0.85 + Math.random() * 0.2));
       const yieldValue = (Math.random() * 4.5 + 2.4).toFixed(1);
@@ -174,7 +174,7 @@ function buildDefaultGame(profile) {
     avatarId: profile.avatarId || 'avatar-1',
     color: profile.color || 'blue',
     cash: 5000,
-    popularity: 20,
+    happiness: 20,
     properties: [],
     impulseAssets: [],
     savedCards: [],
@@ -198,7 +198,7 @@ function buildDefaultGame(profile) {
       avatarId: `avatar-${i + 2}`,
       color: aiColors[(i + 1) % aiColors.length],
       cash: 5000,
-      popularity: 20 + (Math.random() * 10),
+      happiness: 20 + (Math.random() * 10),
       properties: [],
       impulseAssets: [],
       savedCards: [],
@@ -230,6 +230,8 @@ function buildDefaultGame(profile) {
     availableTurns: [],
     lastRoll: null,
     turnIndex: 0,
+    turnCompleted: false,
+    opponentsSimulated: false,
     gameStarted: true,
     settings: { difficulty: 'normal', noLocalProperties: 50 }
   };
@@ -880,7 +882,7 @@ function renderHome() {
   const player = getCurrentPlayer();
   const props = player.properties.length;
   const rent = getPlayerRent(player);
-  const popularity = Math.min(player.popularity || 20, 100);
+  const happiness = Math.min(player.happiness || 20, 100);
   home.innerHTML = `
     <div class="home-top">
       <div class="player-pill">
@@ -911,14 +913,14 @@ function renderHome() {
           <strong>${formatMoney(rent)}</strong>
         </div>
         <div class="stat-card">
-          <div class="kicker">Popularity</div>
-          <strong>${Math.round(popularity)}%</strong>
+          <div class="kicker">Happiness</div>
+          <strong>${Math.round(happiness)}%</strong>
         </div>
       </div>
 
-      <div class="popularity-wrap">
-        <div class="popularity-header"><span>Popularity</span><strong>${Math.round(popularity)}%</strong></div>
-        <div class="popularity-bar"><span style="width:${popularity}%"></span></div>
+      <div class="happiness-wrap">
+        <div class="happiness-header"><span>Happiness</span><strong>${Math.round(happiness)}%</strong></div>
+        <div class="happiness-bar"><span style="width:${happiness}%"></span></div>
       </div>
     </div>
 
@@ -1003,6 +1005,11 @@ function renderTurn() {
   const showBanner = pendingTurnBanner;
   pendingTurnBanner = false;
 
+  if (state.game.turnCompleted) {
+    renderTurnCompleteScreen(turn);
+    return;
+  }
+
   turn.innerHTML = `
     <div id="turn-card-screen">
       ${showBanner ? `
@@ -1063,6 +1070,96 @@ function renderTurn() {
   }, 2600);
 }
 
+function renderTurnCompleteScreen(turn) {
+  const simulated = Boolean(state.game.opponentsSimulated);
+  turn.innerHTML = `
+    <div class="turn-complete-screen">
+      <div class="complete-icon">🎉</div>
+      <h2>Turn Complete!</h2>
+      <p>You've been through every card for Month ${state.game.month}.</p>
+      ${simulated
+        ? `<button class="primary-btn" id="view-leaderboard-btn">View Updated Leaderboard</button>`
+        : `<button class="primary-btn" id="simulate-btn">Simulate Opponents' Turn</button>`}
+    </div>
+  `;
+  document.getElementById('simulate-btn')?.addEventListener('click', handleSimulateClick);
+  document.getElementById('view-leaderboard-btn')?.addEventListener('click', goToLeaderboardAfterTurn);
+}
+
+function handleSimulateClick() {
+  simulateOpponents();
+  // Prepare next month's deck in the background; the completion screen keeps showing
+  // (now with "View Updated Leaderboard") until the player is ready to move on.
+  state.game.month += 1;
+  state.turnDeckCards = generateTurnDeck();
+  state.game.turnIndex = 0;
+  saveState();
+  renderTurn();
+}
+
+function goToLeaderboardAfterTurn() {
+  state.game.turnCompleted = false;
+  state.game.opponentsSimulated = false;
+  saveState();
+  setView('leaderboard');
+}
+
+// Gives each AI opponent one simple action for the round and narrates it via toasts/activity.
+function simulateOpponents() {
+  const opponents = state.game.players.filter((player) => !player.isHuman);
+  const availableProperties = state.game.properties.filter((property) => property.ownerId === null);
+
+  opponents.forEach((opponent) => {
+    const roll = Math.random();
+
+    if (roll < 0.45 && availableProperties.length) {
+      const affordable = availableProperties.filter((property) => property.purchasePrice <= opponent.cash * 0.85);
+      const choice = affordable[(Math.random() * affordable.length) | 0];
+      if (choice) {
+        opponent.cash -= choice.purchasePrice;
+        choice.ownerId = opponent.id;
+        opponent.properties.push(choice.id);
+        availableProperties.splice(availableProperties.indexOf(choice), 1);
+        state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} bought ${choice.name}`, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
+        showToast(`${opponent.name.toUpperCase()} BOUGHT ${choice.name.toUpperCase()}`);
+        return;
+      }
+    }
+
+    if (roll < 0.8) {
+      const owners = state.game.players.filter((player) => player.id !== opponent.id && (player.properties || []).length);
+      const owner = owners[(Math.random() * owners.length) | 0];
+      const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
+      const property = ownedProperties[(Math.random() * ownedProperties.length) | 0];
+      if (owner && property) {
+        const rentDue = Math.round(property.baseRent * (0.9 + Math.random() * 0.3));
+        opponent.cash -= rentDue;
+        owner.cash += rentDue;
+        state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[opponent.color] });
+        showToast(`${opponent.name.toUpperCase()} PAID RENT TO ${owner.name.toUpperCase()}`);
+        return;
+      }
+    }
+
+    const assets = createImpulseAssets();
+    const asset = assets[(Math.random() * assets.length) | 0];
+    if (opponent.cash >= asset.price) {
+      opponent.cash -= asset.price;
+      opponent.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
+      opponent.happiness = clamp(Number(opponent.happiness || 20) + asset.popularity, 0, 100);
+      state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
+      showToast(`${opponent.name.toUpperCase()} BOUGHT ${asset.name.toUpperCase()}`);
+    } else {
+      state.game.activity.unshift({ id: uid('act'), text: `${opponent.name} sat this month out`, icon: '💤', time: 'now', color: COLORS[opponent.color] });
+      showToast(`${opponent.name.toUpperCase()} SAT THIS MONTH OUT`);
+    }
+  });
+
+  state.game.opponentsSimulated = true;
+  saveState();
+}
+
+
 function renderTurnCardMarkup(card, currentPlayer, index, total) {
   if (card.type === 'property') {
     const property = getPropertyById(card.propertyId);
@@ -1073,7 +1170,7 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
         <div class="type-tag"><span class="type-icon">🏠</span><span>Property · ${property.tierLabel}</span></div>
         <div class="turn-count">${index + 1}/${total}</div>
       </div>
-      <div class="card-media property-art" style="background:${property.image};">
+      <div class="card-media property-art" style="background-image:${property.image};">
         <span class="rarity-ribbon" style="color:${rarity.color}; border-color:${rarity.color};">${rarity.label}</span>
         <span class="media-placeholder-icon">📷</span>
       </div>
@@ -1089,10 +1186,10 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
         <span>Risk ${property.risk}</span>
       </div>
       <div class="desc">${property.description}</div>
-      <div class="turn-actions">
-        <button class="buy-btn" data-action="buy-property" data-id="${property.id}">Buy ${formatMoney(property.purchasePrice)}</button>
-        <button class="skip-btn" data-action="skip-card">Skip</button>
+      <div class="turn-actions single-action">
+        <button class="buy-btn buy-btn-large" data-action="buy-property" data-id="${property.id}">Buy ${formatMoney(property.purchasePrice)}</button>
       </div>
+      <div class="skip-stamp">Skip</div>
     `;
   }
 
@@ -1115,8 +1212,8 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
             </div>
           </div>
         </div>
-        <button class="roll-btn" data-action="roll-dice">Roll Dice</button>
-        <div class="roll-text">Odd = rent due • Even = bonus option</div>
+        <button class="roll-btn" data-action="roll-dice" ${card.rolled ? 'disabled' : ''}>${card.rolled ? 'Rolled!' : 'Roll Dice'}</button>
+        <div class="roll-text">${card.rolled ? 'Swipe up to continue' : 'Odd = rent due • Even = bonus option'}</div>
       </div>
     `;
   }
@@ -1134,14 +1231,14 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
       <h4>${asset.name}</h4>
       <div class="meta"><span>Price</span><span>${formatMoney(asset.price)}</span></div>
       <div class="stats-row">
-        <div class="stat-block"><span class="label">Popularity</span><strong>+${asset.popularity}%</strong></div>
+        <div class="stat-block"><span class="label">Hype</span><strong>+${asset.popularity}%</strong></div>
         <div class="stat-block"><span class="label">Resale</span><strong>${formatMoney(asset.resale)}</strong></div>
         <div class="stat-block"><span class="label">Trend</span><strong>Mixed</strong></div>
       </div>
-      <div class="turn-actions">
-        <button class="buy-btn" data-action="buy-impulse" data-asset="${asset.id}">Buy ${formatMoney(asset.price)}</button>
-        <button class="skip-btn" data-action="skip-card">Skip</button>
+      <div class="turn-actions single-action">
+        <button class="buy-btn buy-btn-large" data-action="buy-impulse" data-asset="${asset.id}">Buy ${formatMoney(asset.price)}</button>
       </div>
+      <div class="skip-stamp">Skip</div>
     `;
   }
 
@@ -1173,20 +1270,20 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
     btn.addEventListener('click', (event) => {
       clearIdleHint();
       const action = btn.dataset.action;
-      if (action === 'buy-property') buyPropertyFromTurn(btn.dataset.id);
-      if (action === 'skip-card') advanceTurnCard();
-      if (action === 'roll-dice') resolveDiceRoll();
-      if (action === 'buy-impulse') buyImpulseAsset(btn.dataset.asset);
+      if (action === 'buy-property') flashCardBought(cardEl, () => buyPropertyFromTurn(btn.dataset.id));
+      if (action === 'roll-dice' && !btn.disabled) animateDiceRoll(cardEl, card, () => resolveDiceRoll(card));
+      if (action === 'buy-impulse') flashCardBought(cardEl, () => buyImpulseAsset(btn.dataset.asset));
       if (action === 'reveal-chance') resolveChanceCard(index);
       event.stopPropagation();
     });
   });
 
   let drag = null;
+  const skipStamp = cardEl.querySelector('.skip-stamp');
 
   cardEl.addEventListener('pointerdown', (event) => {
     if (!event.isPrimary) return;
-    // Don't hijack taps on buttons (Buy/Skip/Roll/Continue) as drag gestures.
+    // Don't hijack taps on buttons (Buy/Roll/Continue) as drag gestures.
     if (event.target.closest('button')) return;
     clearIdleHint();
     cardEl.setPointerCapture(event.pointerId);
@@ -1205,6 +1302,12 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
     const rotation = drag.diff / 26;
     cardEl.style.transform = `translateY(${drag.diff}px) rotate(${rotation}deg) scale(${1 - Math.min(Math.abs(drag.diff) / 3000, 0.06)})`;
     cardEl.style.opacity = String(1 - Math.min(Math.abs(drag.diff) / 500, 0.35));
+    // Reveal the "Skip" stamp the further you drag upward, like Tinder's swipe stamps.
+    if (skipStamp) {
+      const progress = drag.diff < 0 ? Math.min(Math.abs(drag.diff) / 140, 1) : 0;
+      skipStamp.style.opacity = String(progress);
+      skipStamp.style.transform = `rotate(${-8 - progress * 4}deg) scale(${0.85 + progress * 0.25})`;
+    }
   });
 
   function endDrag(event) {
@@ -1216,9 +1319,17 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
     const diff = drag.diff || 0;
     const velocity = drag.velocity || 0;
     drag = null;
-    if (diff < -60 || velocity < -0.55) {
+    const wantsSkip = diff < -60 || velocity < -0.55;
+    const wantsBack = diff > 60 || velocity > 0.55;
+    if (wantsSkip) {
+      if (card.type === 'dice' && !card.rolled) {
+        showToast('Roll the dice first!');
+        haptic('warning');
+        resetCardPosition(cardEl, index);
+        return;
+      }
       flyCardAway(cardEl, -1, () => advanceTurnCard());
-    } else if (diff > 60 || velocity > 0.55) {
+    } else if (wantsBack) {
       flyCardAway(cardEl, 1, () => previousTurnCard());
     } else {
       resetCardPosition(cardEl, index);
@@ -1227,6 +1338,37 @@ function attachTurnCardInteractions(cardEl, card, index, total) {
 
   cardEl.addEventListener('pointerup', endDrag);
   cardEl.addEventListener('pointercancel', endDrag);
+}
+
+// Briefly tints the card green so buying a property/impulse item feels confirmed before it advances.
+function flashCardBought(cardEl, onDone) {
+  cardEl.classList.add('card-bought-flash');
+  setTimeout(onDone, 360);
+}
+
+// Cycles the dice face rapidly, easing to a stop, before revealing the real roll result.
+function animateDiceRoll(cardEl, card, onComplete) {
+  const diceEl = cardEl.querySelector('.dice');
+  const rollBtn = cardEl.querySelector('.roll-btn');
+  if (!diceEl || diceEl.classList.contains('rolling')) return;
+  if (rollBtn) rollBtn.disabled = true;
+  diceEl.classList.add('rolling');
+  haptic('soft');
+  let ticks = 0;
+  const maxTicks = 9;
+  const tick = () => {
+    ticks += 1;
+    diceEl.dataset.value = String(1 + ((Math.random() * 6) | 0));
+    if (ticks >= maxTicks) {
+      diceEl.classList.remove('rolling');
+      diceEl.classList.add('landed');
+      setTimeout(() => diceEl.classList.remove('landed'), 420);
+      onComplete();
+      return;
+    }
+    setTimeout(tick, 60 + ticks * 14);
+  };
+  tick();
 }
 
 function flyCardAway(el, direction, onDone) {
@@ -1243,11 +1385,22 @@ function resetCardPosition(el, index) {
   el.style.transition = 'transform 260ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease';
   el.style.transform = `translateY(${offset * 22}px) scale(${1 - offset * 0.055})`;
   el.style.opacity = '1';
+  const skipStamp = el.querySelector('.skip-stamp');
+  if (skipStamp) {
+    skipStamp.style.opacity = '0';
+  }
 }
 
 function advanceTurnCard() {
   const turnCount = (state.turnDeckCards || []).length;
-  state.game.turnIndex = Math.min((state.game.turnIndex || 0) + 1, turnCount - 1);
+  const nextIndex = (state.game.turnIndex || 0) + 1;
+  if (nextIndex >= turnCount) {
+    state.game.turnCompleted = true;
+    saveState();
+    renderTurn();
+    return;
+  }
+  state.game.turnIndex = nextIndex;
   renderTurn();
 }
 
@@ -1294,19 +1447,20 @@ function buyImpulseAsset(assetId) {
   }
   player.cash -= asset.price;
   player.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
-  player.popularity = clamp(Number(player.popularity || 20) + asset.popularity, 0, 100);
+  player.happiness = clamp(Number(player.happiness || 20) + asset.popularity, 0, 100);
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[player.color] });
-  showToast(`POPULARITY +${asset.popularity}%`);
+  showToast(`HAPPINESS +${asset.popularity}%`);
   haptic('soft');
   saveState();
   renderAll();
   setTimeout(() => advanceTurnCard(), 260);
 }
 
-function resolveDiceRoll() {
+function resolveDiceRoll(card) {
   const player = getCurrentPlayer();
   const roll = (Math.random() * 6 + 1) | 0;
   state.game.lastRoll = roll;
+  if (card) card.rolled = true;
   haptic('medium');
 
   if (roll % 2 === 1) {
@@ -1432,7 +1586,7 @@ function renderPortfolio() {
       <div class="property-list">
         ${propertyCards.length ? propertyCards.map((property) => `
           <div class="portfolio-item">
-            <div class="thumb" style="background:${property.image};"></div>
+            <div class="thumb" style="background-image:${property.image};"></div>
             <div>
               <h4>${property.name}</h4>
               <div class="sub">${property.area}</div>
@@ -1468,7 +1622,7 @@ function openPropertyDetail(propertyId) {
           <button type="button" class="ghost-btn" data-close-modal="true">Close</button>
         </div>
         <div class="modal-body">
-          <div class="property-art" style="height: 180px; background:${property.image}; border-radius:16px; margin-bottom: 12px;"></div>
+          <div class="property-art" style="height: 180px; background-image:${property.image}; border-radius:16px; margin-bottom: 12px;"></div>
           <div class="stats-row">
             <div class="stat-block"><span class="label">Game Value</span><strong>${formatMoney(property.gameValue)}</strong></div>
             <div class="stat-block"><span class="label">Rent</span><strong>${formatMoney(property.baseRent)}</strong></div>
@@ -1602,6 +1756,11 @@ function renderSettings() {
         <h3>Game</h3>
         <div class="setting-row"><span>Difficulty</span><strong>${state.settings.difficulty || 'normal'}</strong></div>
         <div class="setting-row"><span>Local properties</span><strong>${state.settings.localProperties || 50}</strong></div>
+        <div class="setting-row"><span>Location</span><strong>${state.settings.postcode ? state.settings.postcode.toUpperCase() : 'Sample data'}</strong></div>
+      </div>
+      <div class="settings-section">
+        <h3>Danger Zone</h3>
+        <button class="ghost-btn" id="reset-game-btn" style="width:100%; color: var(--danger); border-color: rgba(255,106,92,0.35);">Reset Game</button>
       </div>
     </div>
   `;
@@ -1613,6 +1772,15 @@ function renderSettings() {
       renderSettings();
     });
   });
+
+  document.getElementById('reset-game-btn')?.addEventListener('click', resetGame);
+}
+
+// Wipes all saved progress and restarts onboarding from scratch.
+function resetGame() {
+  if (!confirm('Reset your game? This clears your progress and starts over.')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
 }
 
 function initializeApp() {

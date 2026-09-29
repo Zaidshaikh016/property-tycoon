@@ -107,6 +107,12 @@ async function findNearbyPlaces(lat, lon, targetCount) {
     if (!name || seenNames.has(name)) return;
     seenNames.add(name);
 
+    const placeLat = el.lat || el.center?.lat;
+    const placeLon = el.lon || el.center?.lon;
+    // Skip anything the Overpass query somehow returned outside our "not too far" radius.
+    const distanceKm = (placeLat != null && placeLon != null) ? haversineKm(lat, lon, placeLat, placeLon) : null;
+    if (distanceKm != null && distanceKm > radius / 1000) return;
+
     const isEnterprise = Boolean(tags.brand) || (tags.shop && ['supermarket', 'department_store', 'chemist'].includes(tags.shop));
     const category = categoryFromTags(tags);
     const entry = {
@@ -115,18 +121,35 @@ async function findNearbyPlaces(lat, lon, targetCount) {
       category,
       isEnterprise,
       importance: isEnterprise ? 0.8 : 0.4,
-      lat: el.lat || el.center?.lat,
-      lon: el.lon || el.center?.lon
+      lat: placeLat,
+      lon: placeLon,
+      distance: distanceKm != null ? Number(distanceKm.toFixed(1)) : null
     };
     (isEnterprise ? enterprises : generic).push(entry);
   });
+
+  // Closest places first, so "not too far from the entered postcode" holds even when there
+  // are more matches than we need.
+  const byDistance = (a, b) => (a.distance ?? 999) - (b.distance ?? 999);
+  enterprises.sort(byDistance);
+  generic.sort(byDistance);
 
   // Aim for up to 10 real enterprises, then fill the remainder with general POIs.
   const chosenEnterprises = enterprises.slice(0, 10);
   const remaining = targetCount - chosenEnterprises.length;
   const chosenGeneric = generic.slice(0, Math.max(remaining, 0));
 
-  return [...chosenEnterprises, ...chosenGeneric].slice(0, targetCount);
+  return [...chosenEnterprises, ...chosenGeneric].sort(byDistance).slice(0, targetCount);
+}
+
+// Great-circle distance between two lat/lon points, in kilometres.
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
 function categoryFromTags(tags) {

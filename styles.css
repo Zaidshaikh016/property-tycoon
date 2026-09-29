@@ -514,17 +514,17 @@ button:hover { transform: translateY(-1px); }
 .stat-card strong { display:block; font-size:1.15rem; margin-top: 8px; }
 .stat-card .trend { font-size:0.7rem; color: var(--success); }
 
-.popularity-wrap {
+.happiness-wrap {
   margin-top: 14px;
 }
-.popularity-header {
+.happiness-header {
   display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
   color: var(--text-soft);
 }
-.popularity-bar {
+.happiness-bar {
   height: 10px; border-radius: 999px; background: rgba(255,255,255,0.08); overflow:hidden;
 }
-.popularity-bar > span {
+.happiness-bar > span {
   display:block; width: 0%; height:100%; border-radius: inherit;
   background: linear-gradient(90deg, #2dd4bf, #5ddcff 50%, #8f7dff 100%);
   transition: width 350ms ease;
@@ -644,7 +644,7 @@ button:hover { transform: translateY(-1px); }
 
 /* Reserved image slot: today it's a gradient placeholder, tomorrow it's the AI-generated location photo */
 .card-media {
-  width: 100%; height: 216px; border-radius: 18px; background-size: cover; background-position:center; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.08);
+  width: 100%; height: 216px; border-radius: 18px; background-size: cover; background-position:center; background-repeat: no-repeat; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.08);
   display:flex; align-items:flex-end; justify-content:flex-start;
 }
 .card-media::after {
@@ -687,11 +687,41 @@ button:hover { transform: translateY(-1px); }
 .turn-actions {
   display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top: 12px;
 }
+.turn-actions.single-action {
+  grid-template-columns: 1fr;
+}
 .turn-actions button {
   padding: 15px 12px; border-radius: 14px; border:none; font-weight:800; letter-spacing:0.04em;
 }
 .turn-actions .buy-btn { background: linear-gradient(135deg, #1fa86d, #4dd59d); color: #041a15; }
 .turn-actions .skip-btn { background: rgba(255,255,255,0.06); color: var(--text); border:1px solid rgba(255,255,255,0.08); }
+.buy-btn-large {
+  padding: 19px 14px !important; font-size: 1.05rem; letter-spacing: 0.03em;
+  box-shadow: 0 14px 28px rgba(31, 168, 109, 0.28);
+}
+
+/* Tinder-style stamp that appears the further you drag the card upward, replacing the old Skip button */
+.skip-stamp {
+  position: absolute; top: 18px; right: 18px; z-index: 4;
+  padding: 8px 16px; border: 3px solid var(--danger); border-radius: 10px;
+  color: var(--danger); font-weight: 900; font-size: 1.1rem; letter-spacing: 0.14em; text-transform: uppercase;
+  opacity: 0; transform: rotate(-10deg) scale(0.85); pointer-events: none;
+  transition: opacity 60ms linear;
+}
+
+/* Green confirmation flash when a purchase is made, right before the card advances */
+.turn-card.card-bought-flash::after {
+  content: "";
+  position: absolute; inset: 0; z-index: 6; border-radius: inherit;
+  background: rgba(52, 211, 153, 0.28);
+  animation: boughtFlash 360ms ease;
+  pointer-events: none;
+}
+@keyframes boughtFlash {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* Idle hint teaching the swipe-up gesture */
 .swipe-hint {
@@ -716,6 +746,16 @@ button:hover { transform: translateY(-1px); }
 }
 .turn-banner-icon { animation: bannerIconSpin 900ms ease-out; }
 
+.turn-complete-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  min-height: 60vh; padding: 20px 16px; gap: 6px;
+  animation: riseIn 320ms cubic-bezier(.2,.8,.2,1);
+}
+.turn-complete-screen .complete-icon { font-size: 3.6rem; margin-bottom: 6px; animation: bannerIconSpin 600ms ease-out; }
+.turn-complete-screen h2 { margin: 0 0 4px; font-size: 1.6rem; letter-spacing: -0.03em; }
+.turn-complete-screen p { color: var(--text-soft); margin: 0 0 20px; max-width: 280px; }
+.turn-complete-screen .primary-btn { width: min(100%, 320px); }
+
 .dice-card .dice-visual {
   display:grid; place-items:center; min-height: 210px; background: linear-gradient(160deg, rgba(255, 209, 102, 0.1), rgba(72, 130, 255, 0.08));
   border-radius: 18px; margin-top: 8px; border: 1px solid rgba(255,255,255,0.08);
@@ -723,6 +763,24 @@ button:hover { transform: translateY(-1px); }
 .dice {
   width: 118px; height: 118px; border-radius: 22px; position: relative; background: linear-gradient(135deg, #fefefe, #dfeaf8); box-shadow: inset 0 0 0 2px rgba(0,0,0,.05), 0 24px 40px rgba(0,0,0,.24); transform: rotate(12deg);
 }
+.dice.rolling {
+  animation: diceTumble 90ms linear infinite;
+  box-shadow: inset 0 0 0 2px rgba(0,0,0,.05), 0 30px 50px rgba(0,0,0,.3);
+}
+.dice.landed {
+  animation: diceLand 420ms cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes diceTumble {
+  0% { transform: rotate(6deg) scale(1); }
+  50% { transform: rotate(-10deg) scale(1.08); }
+  100% { transform: rotate(6deg) scale(1); }
+}
+@keyframes diceLand {
+  0% { transform: rotate(6deg) scale(1.18); }
+  55% { transform: rotate(-4deg) scale(0.94); }
+  100% { transform: rotate(12deg) scale(1); }
+}
+.roll-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .dice::before {
   content: ""; position:absolute; inset: 18px 16px 18px 16px; background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.24) 50%, rgba(255,255,255,0.1) 100%);
   border-radius: 16px;
@@ -793,6 +851,9 @@ button:hover { transform: translateY(-1px); }
 }
 .portfolio-item .thumb {
   width: 74px; height: 74px; border-radius: 12px; background-size: cover; background-position:center; border:1px solid rgba(255,255,255,0.1);
+}
+.property-art {
+  background-size: cover; background-position: center; background-repeat: no-repeat;
 }
 .portfolio-item h4 { margin:0; font-size:1rem; }
 .portfolio-item .sub { color: var(--text-soft); font-size:0.72rem; }
