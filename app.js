@@ -1741,7 +1741,7 @@ function simulateOpponents() {
         const text = `${opponent.name} rolled ${diceRoll} and paid ${formatMoney(rentDue)} rent to ${owner.name}`;
         state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: Date.now(), color: COLORS[opponent.color] });
         log.push({ icon: '💸', text });
-        showToast(`${opponent.name.toUpperCase()} ROLLED ${diceRoll} • PAID RENT TO ${owner.name.toUpperCase()}`);
+        showToast(`${opponent.name.toUpperCase()} ROLLED ${diceRoll} • PAID ${formatMoney(rentDue)} TO ${owner.name.toUpperCase()}`);
         handleCashShortfall(opponent);
         return;
       }
@@ -2088,6 +2088,7 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
           </div>
         </div>
         <button class="roll-btn" data-action="roll-dice" ${card.rolled ? 'disabled' : ''}>${card.rolled ? 'Rolled!' : 'Roll Dice'}</button>
+        ${card.rolled && card.rollOutcomeText ? `<div class="roll-outcome">${card.rollOutcomeText}</div>` : ''}
         <div class="roll-text">${card.rolled ? 'Swipe up to continue' : 'Odd = rent due • Even = bonus option'}</div>
       </div>
     `;
@@ -2396,7 +2397,8 @@ function resolveDiceRoll(card) {
       playCashSound(rentDue, owner);
       adjustHappiness(owner, 3, `Received rent from ${player.name}`);
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: Date.now(), color: COLORS[player.color] });
-      showToast(`YOU ROLLED ${roll} • RENT!`);
+      if (card) card.rollOutcomeText = `You paid ${formatMoney(rentDue)} rent to ${owner.name}`;
+      showToast(`YOU ROLLED ${roll} • PAID ${formatMoney(rentDue)} TO ${owner.name.toUpperCase()}`);
       handleCashShortfall(player);
       saveState();
       renderAll();
@@ -2405,13 +2407,16 @@ function resolveDiceRoll(card) {
     }
     // Odd roll, but no one owns a property yet (early game) — still give clear feedback
     // instead of silently doing nothing.
+    if (card) card.rollOutcomeText = 'No one owned a property yet, so no rent was due.';
     showToast(`YOU ROLLED ${roll} • No one owns a property yet, so no rent is due!`);
   } else {
     const choice = Math.random() > 0.5 ? 'chance' : 'properties';
     if (choice === 'chance') {
+      if (card) card.rollOutcomeText = 'Bonus! Drawing a Chance card.';
       showToast('EVEN NUMBER! Draw a Chance card');
       appendChanceCard(true);
     } else {
+      if (card) card.rollOutcomeText = 'Bonus! Here are 2 more properties to consider.';
       showToast('EVEN NUMBER! See 2 more properties');
       appendBonusProperties();
     }

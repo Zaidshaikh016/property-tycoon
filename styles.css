@@ -1088,6 +1088,11 @@ button:hover { transform: translateY(-1px); }
   width:100%; margin-top:8px; background: linear-gradient(135deg, #ff5a5f, #ff7f54); color: white; font-weight:800; border:none; border-radius: 15px; padding: 15px 12px;
 }
 .dice-card .roll-text { text-align:center; margin-top: 8px; color: var(--text-soft); }
+.roll-outcome {
+  text-align: center; margin-top: 10px; padding: 10px 14px; border-radius: 12px;
+  background: rgba(var(--tint-rgb),0.06); border: 1px solid rgba(var(--tint-rgb),0.1);
+  font-weight: 700; font-size: 0.88rem;
+}
 
 .choice-grid {
   display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;
