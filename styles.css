@@ -1039,6 +1039,16 @@ button:hover { transform: translateY(-1px); }
 .portfolio-item .sub { color: var(--text-soft); font-size:0.72rem; margin-bottom: 6px; }
 .item-actions { display:flex; gap:6px; }
 .item-actions button { padding:8px 10px; border-radius: 10px; border:none; font-size:0.72rem; }
+/* Upgrade + Sell stacked so both buttons share the same (widest-content) width instead of
+   sizing independently to their own text. */
+.item-actions-stack { flex-direction: column; align-items: stretch; min-width: 92px; }
+.item-actions-stack button, .item-actions-stack .maxed-badge { width: 100%; text-align: center; }
+/* Sell/Upgrade on your own property, deliberately colour-coded: green to grow, red to exit. */
+.success-btn {
+  background: rgba(68,208,141,0.14);
+  color: var(--success);
+  border: 1px solid rgba(68,208,141,0.35);
+}
 
 .show-all-toggle {
   width: 100%; text-align: left; background: rgba(var(--tint-rgb),0.04); border: 1px solid rgba(var(--tint-rgb),0.08);

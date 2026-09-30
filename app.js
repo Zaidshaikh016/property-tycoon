@@ -1003,6 +1003,32 @@ function adjustHappiness(player, amount, reason) {
   if (!player.happinessLog) player.happinessLog = [];
   player.happinessLog.unshift({ id: uid('hlog'), text: reason, amount: actualDelta, time: 'now' });
   player.happinessLog = player.happinessLog.slice(0, 20);
+  if (player.isHuman && actualDelta > 0) playSound('yay');
+}
+
+const SOUND_FILES = {
+  cash: "audio/cash.mp3",
+  womp: "audio/womp womp womp.mp3",
+  yay: "audio/yay.mp3",
+  bankrupt: "audio/bankrupt.mp3"
+};
+
+// Fire-and-forget sound effect playback — failures (autoplay policy, missing file) are
+// swallowed since a missing sound should never break gameplay.
+function playSound(name) {
+  const src = SOUND_FILES[name];
+  if (!src) return;
+  try {
+    const audio = new Audio(encodeURI(src));
+    audio.volume = 0.6;
+    audio.play().catch(() => {});
+  } catch { /* ignore */ }
+}
+
+// Only the human player's own cash changes get a sound — AI opponents' cash moves silently.
+function playCashSound(delta, player) {
+  if (!delta || !player?.isHuman) return;
+  playSound(delta > 0 ? 'cash' : 'womp');
 }
 
 // Quick visual read on mood for the Home screen's Happiness display, across the full
@@ -1462,6 +1488,7 @@ function simulateOpponents() {
         const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner));
         opponent.cash -= rentDue;
         owner.cash += rentDue;
+        playCashSound(rentDue, owner);
         adjustHappiness(owner, 3, `Received rent from ${opponent.name}`);
         const text = `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`;
         state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
@@ -1800,6 +1827,7 @@ function buyPropertyFromTurn(propertyId) {
   property.ownerId = player.id;
   player.properties.push(property.id);
   player.tookActionThisTurn = true;
+  playCashSound(-property.purchasePrice, player);
   adjustHappiness(player, 2, `Invested in ${property.name}`);
   state.game.activity.unshift({
     id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: 'now', color: COLORS[player.color]
@@ -1824,6 +1852,7 @@ function buyImpulseAsset(assetId) {
   player.cash -= asset.price;
   player.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
   player.tookActionThisTurn = true;
+  playCashSound(-asset.price, player);
   adjustHappiness(player, asset.popularity, `Bought ${asset.name}`);
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[player.color] });
   showToast(`HAPPINESS +${asset.popularity}%`);
@@ -1850,6 +1879,8 @@ function resolveDiceRoll(card) {
       const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner));
       player.cash -= rentDue;
       owner.cash += rentDue;
+      playCashSound(-rentDue, player);
+      playCashSound(rentDue, owner);
       adjustHappiness(owner, 3, `Received rent from ${player.name}`);
       state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
       showToast(`YOU ROLLED ${roll} • RENT!`);
@@ -1885,11 +1916,13 @@ function applyChanceEffect(card, player) {
   const isCurrentPlayer = player.id === getCurrentPlayer().id;
   if (card.effect === 'cash-in') {
     player.cash += card.amount;
+    playCashSound(card.amount, player);
     showToast(`${who} RECEIVED ${formatMoney(card.amount)}`);
     if (isCurrentPlayer) showTurnCashDelta(card.amount);
   }
   if (card.effect === 'cash-out') {
     player.cash -= card.amount;
+    playCashSound(-card.amount, player);
     showToast(`${who} PAID ${formatMoney(card.amount)}`);
     handleCashShortfall(player);
     if (isCurrentPlayer) showTurnCashDelta(-card.amount);
@@ -2006,11 +2039,12 @@ function renderPortfolio() {
     saveState();
     renderPortfolio();
   });
-  portfolio.querySelectorAll('[data-property-detail]').forEach((button) => {
-    button.addEventListener('click', () => openPropertyDetail(button.dataset.propertyDetail));
+  portfolio.querySelectorAll('[data-property-detail]').forEach((card) => {
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => openPropertyDetail(card.dataset.propertyDetail));
   });
   portfolio.querySelectorAll('[data-sell-property]').forEach((button) => {
-    button.addEventListener('click', () => sellProperty(button.dataset.sellProperty));
+    button.addEventListener('click', (event) => { event.stopPropagation(); sellProperty(button.dataset.sellProperty); });
   });
   portfolio.querySelectorAll('[data-upgrade-property]').forEach((button) => {
     button.addEventListener('click', (event) => { event.stopPropagation(); upgradeProperty(button.dataset.upgradeProperty); });
@@ -2030,20 +2064,17 @@ function renderOwnedPortfolioItem(property) {
   const level = property.upgradeLevel || 0;
   const nextCost = level < MAX_UPGRADE_LEVEL ? getUpgradeCost(property, level + 1) : null;
   return `
-    <div class="portfolio-item">
+    <div class="portfolio-item" data-property-detail="${property.id}">
       <div class="thumb" style="background-image:${property.image};"></div>
       <div>
         <h4>${property.name}</h4>
         <div class="sub">${property.area} · ${property.tierLabel}</div>
-        <div class="upgrade-row">
-          <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
-          ${nextCost != null
-            ? `<button class="danger-btn pill-btn" data-upgrade-property="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
-            : '<span class="maxed-badge">MAX LEVEL</span>'}
-        </div>
+        <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
       </div>
-      <div class="item-actions">
-        <button class="ghost-btn" data-property-detail="${property.id}">View</button>
+      <div class="item-actions item-actions-stack">
+        ${nextCost != null
+          ? `<button class="success-btn pill-btn" data-upgrade-property="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+          : '<span class="maxed-badge">MAX LEVEL</span>'}
         <button class="danger-btn pill-btn" data-sell-property="${property.id}">Sell</button>
       </div>
     </div>
@@ -2084,6 +2115,7 @@ function upgradeProperty(propertyId) {
   player.cash -= cost;
   property.upgradeLevel = level + 1;
   player.tookActionThisTurn = true;
+  playCashSound(-cost, player);
   adjustHappiness(player, 3, `Upgraded ${property.name}`);
   const label = property.upgradeLevel >= MAX_UPGRADE_LEVEL ? 'a Hotel' : `Level ${property.upgradeLevel}`;
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: 'now', color: COLORS[player.color] });
@@ -2145,7 +2177,7 @@ function openPropertyDetail(propertyId) {
           <div class="upgrade-row" style="margin-top:12px;">
             <div class="upgrade-icons">${renderUpgradeIcons(level)}</div>
             ${nextCost != null
-              ? `<button class="danger-btn pill-btn" data-action="property-upgrade" data-id="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
+              ? `<button class="success-btn pill-btn" data-action="property-upgrade" data-id="${property.id}">Upgrade ${formatMoney(nextCost)}</button>`
               : '<span class="maxed-badge">MAX LEVEL</span>'}
           </div>
           <div class="desc" style="margin-top: 12px;">${property.description}</div>
@@ -2173,6 +2205,7 @@ function sellProperty(propertyId) {
   player.cash += saleValue;
   property.ownerId = null;
   player.properties = player.properties.filter((id) => id !== propertyId);
+  playCashSound(saleValue, player);
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} sold ${property.name} for ${formatMoney(saleValue)}`, icon: '💼', time: 'now', color: COLORS[player.color] });
   showToast(`Sold ${property.name}`);
   haptic('soft');
@@ -2213,6 +2246,7 @@ function handleCashShortfall(player) {
     player.isBankrupt = true;
     state.game.activity.unshift({ id: uid('act'), text: `${player.name} has gone BANKRUPT!`, icon: '💀', time: 'now', color: COLORS[player.color] });
     if (player.isHuman) {
+      playSound('bankrupt');
       showBankruptcyModal(player);
     } else {
       showToast(`${player.name.toUpperCase()} WENT BANKRUPT`);
