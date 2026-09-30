@@ -235,6 +235,60 @@ function createChanceDeck() {
   ];
 }
 
+// One random World Event fires every quarter (every 3 months/turns) and affects EVERY player
+// for the following 3 months — either a recurring flat cost each month, or a rent-wide
+// boost/cut. Deliberately dramatic/newsy so it reads as a shared, unmissable event.
+const WORLD_EVENTS = [
+  { id: 'petrol-crisis', name: 'Petrol Crisis', icon: '⛽', effect: 'flat-cost', amount: 150, description: "A shock war has sent petrol prices soaring across the UK. Pay £150 every month to keep moving." },
+  { id: 'interest-hike', name: 'Interest Rate Hike', icon: '🏦', effect: 'flat-cost', amount: 100, description: 'The Bank of England has hiked interest rates — mortgage costs are up. Pay £100 every month.' },
+  { id: 'energy-crisis', name: 'Energy Price Cap Rises', icon: '🔥', effect: 'flat-cost', amount: 130, description: 'Energy bills have spiked nationwide. Pay £130 every month to keep the lights on.' },
+  { id: 'tax-cut', name: 'Government Tax Cut', icon: '📈', effect: 'rent-boost', value: 15, description: 'The government has slashed property taxes — rent income is up for everyone.' },
+  { id: 'tourism-boom', name: 'Telford Tourism Boom', icon: '🧳', effect: 'rent-boost', value: 12, description: 'Telford is having a moment — visitors are driving up rental demand for everyone.' },
+  { id: 'housing-recession', name: 'Housing Recession', icon: '📉', effect: 'rent-cut', value: 15, description: 'A housing market downturn means lower rent income for everyone.' },
+  { id: 'rent-freeze', name: 'Rent Freeze Order', icon: '🧊', effect: 'rent-cut', value: 10, description: "The council has ordered a rent freeze — everyone's rental income takes a hit." }
+];
+
+function drawWorldEvent() {
+  const def = WORLD_EVENTS[(Math.random() * WORLD_EVENTS.length) | 0];
+  return { ...def, turnsRemaining: 3 };
+}
+
+// Rent multiplier from the currently active World Event (1 when none is active/it's a
+// flat-cost event) — combined with the happiness multiplier wherever rent is calculated.
+function getWorldEventRentMultiplier() {
+  const event = state.game?.worldEvent;
+  if (!event) return 1;
+  if (event.effect === 'rent-boost') return 1 + event.value / 100;
+  if (event.effect === 'rent-cut') return 1 - event.value / 100;
+  return 1;
+}
+
+// Blocking, unmissable "Breaking News" announcement — light blue/white so it can never be
+// mistaken for a normal in-game card, with a globe as the story's "photo".
+function showWorldEventModal(event, playAlert = true) {
+  if (playAlert) playSound('breaking_news');
+  const modal = `
+    <div class="modal-backdrop">
+      <div class="modal-card world-event-modal">
+        <div class="world-event-banner">
+          <div class="world-event-globe">🌐</div>
+          <div class="world-event-kicker">🔴 BREAKING NEWS · WORLD EVENT</div>
+        </div>
+        <div class="modal-body">
+          <h3 class="world-event-title">${event.icon} ${event.name}</h3>
+          <div class="desc">${event.description}</div>
+          <div class="world-event-duration">Affects every player · ${event.turnsRemaining} month${event.turnsRemaining === 1 ? '' : 's'} remaining.</div>
+          <div class="turn-actions single-action" style="margin-top: 14px;">
+            <button class="primary-btn" data-close-modal="true">Got it</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-root').innerHTML = modal;
+  document.querySelector('[data-close-modal]')?.addEventListener('click', () => { document.getElementById('modal-root').innerHTML = ''; });
+}
+
 // Draws one card from the shared chance deck, reshuffling in a fresh deck if it runs dry
 // (chance cards are now guaranteed every month, so the original 12-card deck would empty fast).
 function drawChanceCard() {
@@ -333,6 +387,7 @@ function buildDefaultGame(profile) {
     opponentsSimulated: false,
     lastSimulationLog: [],
     simRevealCount: 0,
+    worldEvent: null,
     cardDrawCounts: { property: 0, dice: 0, impulse: 0, chance: 0 },
     gameStarted: true,
     settings: { difficulty: 'normal', noLocalProperties: 50 }
@@ -981,7 +1036,7 @@ function getPlayerOverallScore(player) {
     return total + property.currentValue + upgradeBonus;
   }, 0);
   const impulseValue = (player.impulseAssets || []).reduce((total, asset) => total + (asset.currentValue || asset.resale || asset.price), 0);
-  const happinessBonus = getPlayerRent(player) - getPlayerBaseRent(player);
+  const happinessBonus = getPlayerHappinessRent(player) - getPlayerBaseRent(player);
   return Math.round(player.cash + propertyValue + impulseValue + happinessBonus);
 }
 
@@ -1013,7 +1068,8 @@ const SOUND_FILES = {
   womp: "audio/womp womp womp.mp3",
   yay: "audio/yay.mp3",
   not_fine: "audio/not_fine.mp3",
-  bankrupt: "audio/bankrupt.mp3"
+  bankrupt: "audio/bankrupt.mp3",
+  breaking_news: "audio/breaking news.mp3"
 };
 
 // Fire-and-forget sound effect playback — failures (autoplay policy, missing file) are
@@ -1041,6 +1097,27 @@ function playCashSound(delta, player) {
 // adjustHappiness's own delayed sound trigger above.
 function playInvestSound(player) {
   if (player?.isHuman) playSound('cash');
+}
+
+// Short synthesized "rattle" tick (Web Audio, no file needed) played on every shake frame
+// while the dice animates, so the shake actually sounds like something's rolling.
+let sharedAudioCtx = null;
+function playDiceTick() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx();
+    const ctx = sharedAudioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 160 + Math.random() * 140;
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.06);
+  } catch { /* ignore */ }
 }
 
 // Quick visual read on mood for the Home screen's Happiness display, across the full
@@ -1105,13 +1182,14 @@ function renderHome() {
   const happiness = clamp(Number.isFinite(player.happiness) ? player.happiness : 20, -100, 100);
   const rentMultiplier = getHappinessRentMultiplier(player);
   const rentPct = Math.round((rentMultiplier - 1) * 100);
-  const rentBonusAmount = rent - getPlayerBaseRent(player);
+  const rentBonusAmount = getPlayerHappinessRent(player) - getPlayerBaseRent(player);
   const happinessMood = rentPct > 0 ? 'gain-text' : rentPct < 0 ? 'loss-text' : '';
   const netWorth = getPlayerNetWorth(player);
   const baseline = Number.isFinite(player.netWorthAtMonthStart) ? player.netWorthAtMonthStart : netWorth;
   const delta = netWorth - baseline;
   const deltaPct = baseline > 0 ? (delta / baseline) * 100 : 0;
   const isGain = delta >= 0;
+  const worldEvent = state.game.worldEvent;
   home.innerHTML = `
     <div class="home-top">
       <div class="player-pill">
@@ -1122,6 +1200,16 @@ function renderHome() {
       </div>
       <div class="month-badge">Month ${state.game.month}</div>
     </div>
+
+    ${worldEvent ? `
+      <div class="world-event-chip" id="home-world-event-chip">
+        <div class="world-event-chip-globe">🌐</div>
+        <div class="world-event-chip-text">
+          <div class="world-event-chip-kicker">WORLD EVENT · ${worldEvent.turnsRemaining} month${worldEvent.turnsRemaining === 1 ? '' : 's'} left</div>
+          <strong>${worldEvent.icon} ${worldEvent.name}</strong>
+        </div>
+      </div>
+    ` : ''}
 
     <div class="home-card home-dashboard">
       <div class="home-balance">
@@ -1195,6 +1283,7 @@ function renderHome() {
   if (turnButton) turnButton.addEventListener('click', () => setView('turn'));
   document.getElementById('home-happiness-card')?.addEventListener('click', openHappinessLog);
   document.getElementById('home-happiness-wrap')?.addEventListener('click', openHappinessLog);
+  document.getElementById('home-world-event-chip')?.addEventListener('click', () => showWorldEventModal(state.game.worldEvent, false));
   animateMoneyNumbers();
 }
 
@@ -1226,12 +1315,18 @@ function openHappinessLog() {
 }
 
 function getPlayerRent(player) {
+  return Math.round(getPlayerBaseRent(player) * getHappinessRentMultiplier(player) * getWorldEventRentMultiplier());
+}
+
+// Rent with ONLY the happiness multiplier applied (no World Event) — used to isolate the £
+// size of the happiness bonus/penalty on its own, so an active World Event doesn't get
+// mislabelled as a happiness effect in the UI.
+function getPlayerHappinessRent(player) {
   return Math.round(getPlayerBaseRent(player) * getHappinessRentMultiplier(player));
 }
 
-// Rent total with NO happiness multiplier applied — used to work out the £ size of the
-// happiness bonus/penalty (getPlayerRent - getPlayerBaseRent) for the leaderboard score and
-// the Home screen's "happiness affects your rent by £X" readout.
+// Rent total with NO multipliers applied at all — the raw sum of each property's effective
+// rent, used as the baseline for both the happiness bonus and World Event readouts.
 function getPlayerBaseRent(player) {
   return (player.properties || []).reduce((total, propertyId) => {
     const property = getPropertyById(propertyId);
@@ -1433,6 +1528,41 @@ function handleSimulateClick() {
   renderTurn();
 }
 
+// Called once per new month. Applies the currently-active World Event's cost (if any) and
+// expires it after 3 applications; if none is active and we've just crossed a quarter
+// boundary (every 3rd month), draws a new one and announces it immediately.
+function advanceWorldEvent() {
+  const event = state.game.worldEvent;
+  if (event) {
+    if (event.effect === 'flat-cost') {
+      state.game.players.forEach((p) => {
+        if (p.isBankrupt) return;
+        p.cash -= event.amount;
+        playCashSound(-event.amount, p);
+        handleCashShortfall(p);
+      });
+      state.game.activity.unshift({ id: uid('act'), text: `Everyone paid ${formatMoney(event.amount)} due to ${event.name}`, icon: event.icon, time: 'now', color: null });
+    }
+    event.turnsRemaining -= 1;
+    if (event.turnsRemaining <= 0) state.game.worldEvent = null;
+  }
+  if (!state.game.worldEvent && state.game.month > 1 && state.game.month % 3 === 1) {
+    const newEvent = drawWorldEvent();
+    state.game.worldEvent = newEvent;
+    state.game.activity.unshift({ id: uid('act'), text: `BREAKING NEWS: ${newEvent.name}`, icon: newEvent.icon, time: 'now', color: null });
+    if (newEvent.effect === 'flat-cost') {
+      state.game.players.forEach((p) => {
+        if (p.isBankrupt) return;
+        p.cash -= newEvent.amount;
+        playCashSound(-newEvent.amount, p);
+        handleCashShortfall(p);
+      });
+      newEvent.turnsRemaining -= 1;
+    }
+    showWorldEventModal(newEvent);
+  }
+}
+
 function handleYourTurnClick() {
   // Snapshot each player's net worth as the new baseline before starting next month,
   // and remember whether this month was a gain or a loss for the Stats page averages.
@@ -1452,6 +1582,7 @@ function handleYourTurnClick() {
   state.game.players.forEach((p) => { p.tookActionThisTurn = false; });
 
   state.game.month += 1;
+  advanceWorldEvent();
   state.turnDeckCards = generateTurnDeck();
   state.game.turnIndex = 0;
   state.game.turnCompleted = false;
@@ -1497,7 +1628,7 @@ function simulateOpponents() {
       const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
       const property = ownedProperties[(Math.random() * ownedProperties.length) | 0];
       if (owner && property) {
-        const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner));
+        const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
         opponent.cash -= rentDue;
         owner.cash += rentDue;
         playCashSound(rentDue, owner);
@@ -1771,6 +1902,7 @@ function animateDiceRoll(cardEl, card, onComplete) {
   const tick = () => {
     ticks += 1;
     diceEl.dataset.value = String(1 + ((Math.random() * 6) | 0));
+    playDiceTick();
     if (ticks >= maxTicks) {
       diceEl.classList.remove('rolling');
       diceEl.classList.add('landed');
@@ -1884,11 +2016,11 @@ function resolveDiceRoll(card) {
 
   if (roll % 2 === 1) {
     const candidates = state.game.players.filter((opponent) => opponent.id !== player.id && (opponent.properties || []).length > 0);
-    const owner = candidates[(Math.random() * candidates.length) | 0] || state.game.players.find((item) => item.id !== player.id);
-    const ownedProperties = owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean);
-    const property = ownedProperties[(Math.random() * ownedProperties.length) | 0] || state.game.properties.find((item) => item.ownerId === owner.id) || null;
-    if (property) {
-      const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner));
+    const owner = candidates[(Math.random() * candidates.length) | 0] || null;
+    const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
+    const property = ownedProperties[(Math.random() * ownedProperties.length) | 0] || null;
+    if (owner && property) {
+      const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
       player.cash -= rentDue;
       owner.cash += rentDue;
       playCashSound(-rentDue, player);
@@ -1902,6 +2034,9 @@ function resolveDiceRoll(card) {
       showTurnCashDelta(-rentDue);
       return;
     }
+    // Odd roll, but no one owns a property yet (early game) — still give clear feedback
+    // instead of silently doing nothing.
+    showToast(`YOU ROLLED ${roll} • No one owns a property yet, so no rent is due!`);
   } else {
     const choice = Math.random() > 0.5 ? 'chance' : 'properties';
     if (choice === 'chance') {
