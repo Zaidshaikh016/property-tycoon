@@ -223,6 +223,28 @@ function getPropertyBackground(tier, category, seed) {
   return gradients[(tier + seed) % gradients.length];
 }
 
+// Real Wikimedia Commons photos occasionally fail to load (network hiccups, hotlink limits,
+// offline device) — verify each property's image once and swap in the existing gradient
+// placeholder if it errors, instead of leaving a permanently blank/broken card.
+function ensurePropertyImageFallback(property) {
+  if (!property || property.imageChecked || !property.image || !property.image.startsWith('url(')) return;
+  property.imageChecked = true;
+  const match = property.image.match(/^url\((['"]?)(.*?)\1\)$/);
+  if (!match) return;
+  const img = new Image();
+  img.onerror = () => {
+    const idNum = parseInt(String(property.id).replace('prop-', ''), 10) || 0;
+    property.image = getPropertyBackground(property.tier, property.category, idNum % 6);
+    renderAll();
+  };
+  img.src = match[2];
+}
+
+function propertyImageCss(property) {
+  ensurePropertyImageFallback(property);
+  return property.image;
+}
+
 // Deliberately weighted ~60% negative / 40% positive so Chance cards feel like real
 // unavoidable life expenses (mandatory once drawn) rather than a free-money lottery.
 function createChanceDeck() {
@@ -2045,7 +2067,7 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
         <div class="type-tag"><span class="type-icon">🏠</span><span>Property · ${property.tierLabel}</span></div>
         <div class="turn-count">${index + 1}/${total}</div>
       </div>
-      <div class="card-media property-art" style="background-image:${property.image};">
+      <div class="card-media property-art" style="background-image:${propertyImageCss(property)};">
         <span class="rarity-ribbon" style="color:${rarity.color}; border-color:${rarity.color};">${rarity.label}</span>
         <span class="media-placeholder-icon">📷</span>
       </div>
@@ -2592,7 +2614,7 @@ function renderOwnedPortfolioItem(property) {
   const nextCost = level < MAX_UPGRADE_LEVEL ? getUpgradeCost(property, level + 1) : null;
   return `
     <div class="portfolio-item" data-property-detail="${property.id}">
-      <div class="thumb" style="background-image:${property.image};"></div>
+      <div class="thumb" style="background-image:${propertyImageCss(property)};"></div>
       <div>
         <h4>${property.name}</h4>
         <div class="sub">${property.area} · ${property.tierLabel}</div>
@@ -2614,7 +2636,7 @@ function renderLockedPortfolioItem(property) {
   const ownerName = property.ownerId ? (state.game.players.find((p) => p.id === property.ownerId)?.name || 'Someone') : null;
   return `
     <div class="portfolio-item locked-item" data-glimpse="${property.id}">
-      <div class="thumb locked-thumb" style="background-image:${property.image};"><span class="lock-mark">?</span></div>
+      <div class="thumb locked-thumb" style="background-image:${propertyImageCss(property)};"><span class="lock-mark">?</span></div>
       <div>
         <h4 class="locked-name">${property.tierLabel} Property</h4>
         <div class="sub">${ownerName ? `Owned by ${ownerName}` : 'Available'}</div>
@@ -2667,7 +2689,7 @@ function openPropertyGlimpse(propertyId) {
           <button type="button" class="ghost-btn" data-close-modal="true">Close</button>
         </div>
         <div class="modal-body">
-          <div class="property-art" style="height: 180px; background-image:${property.image}; border-radius:16px; margin-bottom: 12px; position:relative;">
+          <div class="property-art" style="height: 180px; background-image:${propertyImageCss(property)}; border-radius:16px; margin-bottom: 12px; position:relative;">
             <span class="rarity-ribbon" style="color:${rarity.color}; border-color:${rarity.color}; position:absolute; top:10px; right:10px;">${rarity.label}</span>
           </div>
           <div class="resource-badges"><span>${property.category}</span><span>${ownerName ? `Owned by ${ownerName}` : 'Available to buy'}</span></div>
@@ -2695,7 +2717,7 @@ function openPropertyDetail(propertyId) {
           <button type="button" class="ghost-btn" data-close-modal="true">Close</button>
         </div>
         <div class="modal-body">
-          <div class="property-art" style="height: 180px; background-image:${property.image}; border-radius:16px; margin-bottom: 12px;"></div>
+          <div class="property-art" style="height: 180px; background-image:${propertyImageCss(property)}; border-radius:16px; margin-bottom: 12px;"></div>
           <div class="stats-row">
             <div class="stat-block"><span class="label">Game Value</span><strong>${formatMoney(property.gameValue)}</strong></div>
             <div class="stat-block"><span class="label">Rent</span><strong>${formatMoney(getEffectiveRent(property))}</strong></div>
