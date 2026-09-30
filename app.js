@@ -1003,13 +1003,16 @@ function adjustHappiness(player, amount, reason) {
   if (!player.happinessLog) player.happinessLog = [];
   player.happinessLog.unshift({ id: uid('hlog'), text: reason, amount: actualDelta, time: 'now' });
   player.happinessLog = player.happinessLog.slice(0, 20);
-  if (player.isHuman && actualDelta > 0) playSound('yay');
+  // Slight pause so this plays *after* any cash sound from the same action (e.g. buying a
+  // property plays "cash" then, a beat later, "yay" — not layered on top of each other).
+  if (player.isHuman) setTimeout(() => playSound(actualDelta > 0 ? 'yay' : 'not_fine'), 450);
 }
 
 const SOUND_FILES = {
   cash: "audio/cash.mp3",
   womp: "audio/womp womp womp.mp3",
   yay: "audio/yay.mp3",
+  not_fine: "audio/not_fine.mp3",
   bankrupt: "audio/bankrupt.mp3"
 };
 
@@ -1026,9 +1029,18 @@ function playSound(name) {
 }
 
 // Only the human player's own cash changes get a sound — AI opponents' cash moves silently.
+// This is strictly for genuine gains/losses (rent paid/received, Chance cash effects, selling).
+// Deliberate spending on an investment (buying/upgrading) is NOT a "loss" — see playInvestSound.
 function playCashSound(delta, player) {
   if (!delta || !player?.isHuman) return;
   playSound(delta > 0 ? 'cash' : 'womp');
+}
+
+// Buying a property/impulse item or upgrading is spending money on purpose, so it plays the
+// upbeat "cash" cue (never the sad "womp") — the happiness gain that follows plays itself via
+// adjustHappiness's own delayed sound trigger above.
+function playInvestSound(player) {
+  if (player?.isHuman) playSound('cash');
 }
 
 // Quick visual read on mood for the Home screen's Happiness display, across the full
@@ -1827,7 +1839,7 @@ function buyPropertyFromTurn(propertyId) {
   property.ownerId = player.id;
   player.properties.push(property.id);
   player.tookActionThisTurn = true;
-  playCashSound(-property.purchasePrice, player);
+  playInvestSound(player);
   adjustHappiness(player, 2, `Invested in ${property.name}`);
   state.game.activity.unshift({
     id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: 'now', color: COLORS[player.color]
@@ -1852,7 +1864,7 @@ function buyImpulseAsset(assetId) {
   player.cash -= asset.price;
   player.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
   player.tookActionThisTurn = true;
-  playCashSound(-asset.price, player);
+  playInvestSound(player);
   adjustHappiness(player, asset.popularity, `Bought ${asset.name}`);
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[player.color] });
   showToast(`HAPPINESS +${asset.popularity}%`);
@@ -2115,7 +2127,7 @@ function upgradeProperty(propertyId) {
   player.cash -= cost;
   property.upgradeLevel = level + 1;
   player.tookActionThisTurn = true;
-  playCashSound(-cost, player);
+  playInvestSound(player);
   adjustHappiness(player, 3, `Upgraded ${property.name}`);
   const label = property.upgradeLevel >= MAX_UPGRADE_LEVEL ? 'a Hotel' : `Level ${property.upgradeLevel}`;
   state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: 'now', color: COLORS[player.color] });
