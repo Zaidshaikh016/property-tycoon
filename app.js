@@ -1439,7 +1439,7 @@ function setupCashCardSwipe() {
   let drag = null;
   wrap.addEventListener('pointerdown', (event) => {
     if (!event.isPrimary || event.target.closest('button')) return;
-    drag = { startX: event.clientX, diff: 0, moved: false };
+    drag = { startX: event.clientX, diff: 0, moved: false, width: wrap.clientWidth || 1 };
     try { wrap.setPointerCapture(event.pointerId); } catch { /* unsupported pointer id, drag still works via listeners on the element */ }
   });
   wrap.addEventListener('pointermove', (event) => {
@@ -1447,7 +1447,7 @@ function setupCashCardSwipe() {
     drag.diff = event.clientX - drag.startX;
     if (Math.abs(drag.diff) > 6) drag.moved = true;
     const base = cashCardShowingLastTurn ? -50 : 0;
-    const dragPct = (drag.diff / wrap.clientWidth) * 50;
+    const dragPct = (drag.diff / drag.width) * 50;
     inner.style.transition = 'none';
     inner.style.transform = `translateX(${clamp(base + dragPct, -50, 0)}%)`;
   });

@@ -106,13 +106,16 @@
   color: #0a6b8a;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0;
   min-height: 100%;
   font-family: Inter, "Segoe UI", sans-serif;
   background: linear-gradient(180deg, #071521 0%, #0d1827 100%);
   color: var(--text);
+  /* Stop the browser's own rubber-band/pull-to-refresh bounce from fighting our custom
+     card-drag and cash-flip animations on real touch devices. */
+  overscroll-behavior-y: none;
 }
 body {
   display: flex;
@@ -134,8 +137,12 @@ body::before {
   pointer-events: none;
 }
 button, input { font: inherit; }
-button { cursor: pointer; }
-button:hover { transform: translateY(-1px); }
+button { cursor: pointer; touch-action: manipulation; }
+/* Scope :hover to real pointer devices — on touch screens `:hover` sticks after a tap
+   until something else is tapped, making buttons look stuck/unresponsive. */
+@media (hover: hover) and (pointer: fine) {
+  button:hover { transform: translateY(-1px); }
+}
 
 #app {
   width: 100%;
@@ -820,7 +827,12 @@ button:hover { transform: translateY(-1px); }
   border: 1px solid rgba(var(--tint-rgb),0.1);
   border-radius: 26px;
   box-shadow: 0 24px 44px rgba(1,5,10,0.32), inset 0 1px 0 rgba(var(--tint-rgb),0.06);
-  touch-action: pan-y;
+  /* `none` (not `pan-y`) so the browser never tries to natively scroll this element —
+     the JS pointermove drag handles ALL vertical movement itself; leaving `pan-y` here let
+     native touch-scrolling fight the JS transform on real touchscreens, causing the swipe
+     to feel sticky/janky (mouse-based testing never showed this since it doesn't go through
+     the browser's touch-scroll path at all). */
+  touch-action: none;
   user-select: none;
   transition: transform 260ms cubic-bezier(.2,.8,.2,1), opacity 220ms ease;
   will-change: transform, opacity;
@@ -842,7 +854,9 @@ button:hover { transform: translateY(-1px); }
   /* Safety net for extreme edge cases (very old/tiny screens): if content still doesn't fit
      after all the responsive shrinking above, scroll inside the card rather than clip the
      Buy/Skip buttons entirely. Scrollbar is hidden (still functional) so it stays invisible
-     on the common case where everything already fits. */
+     on the common case where everything already fits. Needs its own `pan-y` to re-allow
+     vertical scrolling here despite the card's own `touch-action:none` (for the swipe drag). */
+  touch-action: pan-y;
   overflow-y: auto;
   scrollbar-width: none;
 }
