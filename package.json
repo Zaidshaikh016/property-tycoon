@@ -1,0 +1,15 @@
+{
+  "name": "property-tycoon",
+  "version": "1.0.0",
+  "description": "Property Tycoon - mobile property trading game",
+  "private": true,
+  "scripts": {
+    "android:sync": "cap sync android",
+    "android:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  }
+}
