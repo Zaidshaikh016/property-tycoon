@@ -19,6 +19,23 @@ const TOOAST_TIMEOUT = 2200;
 const formatMoney = (value) => `£${Math.round(value).toLocaleString()}`;
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+// Turns a stored epoch-ms timestamp into a human "how long ago" label, computed fresh at
+// render time (not baked in), so activity saved to localStorage still reads correctly
+// after the page is closed and reopened later.
+function formatRelativeTime(timestamp) {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return 'just now';
+  const diffMs = Date.now() - ts;
+  if (diffMs < 45 * 1000) return 'just now';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
 function shuffleArray(items) {
   const arr = [...items];
   for (let i = arr.length - 1; i > 0; i--) {
@@ -366,8 +383,8 @@ function buildDefaultGame(profile) {
 
   const properties = createPropertyPool(50);
   const activity = [
-    { id: uid('act'), text: 'Welcome to Telford. The market is live.', icon: '🏙️', time: 'now', color: null },
-    { id: uid('act'), text: 'Local market sentiment is warming up.', icon: '📈', time: '2m ago', color: null }
+    { id: uid('act'), text: 'Welcome to Telford. The market is live.', icon: '🏙️', time: Date.now(), color: null },
+    { id: uid('act'), text: 'Local market sentiment is warming up.', icon: '📈', time: Date.now() - 2 * 60 * 1000, color: null }
   ];
 
   return {
@@ -1193,6 +1210,16 @@ function renderHome() {
   const deltaPct = baseline > 0 ? (delta / baseline) * 100 : 0;
   const isGain = delta >= 0;
   const worldEvent = state.game.worldEvent;
+
+  // "Last turn" figures for the cash card's swipe-left back face, derived from the same
+  // roundDeltas history already tracked for the Stats page — no new save data needed.
+  const roundDeltas = player.roundDeltas || [];
+  const hasLastTurn = roundDeltas.length > 0;
+  const lastDelta = hasLastTurn ? roundDeltas[roundDeltas.length - 1] : 0;
+  const lastTurnBaseline = baseline - lastDelta;
+  const lastTurnPct = lastTurnBaseline > 0 ? (lastDelta / lastTurnBaseline) * 100 : 0;
+  const lastTurnIsGain = lastDelta >= 0;
+  const lastTurnMonth = Math.max(state.game.month - 1, 1);
   home.innerHTML = `
     <div class="home-top">
       <div class="player-pill">
@@ -1215,19 +1242,50 @@ function renderHome() {
     ` : ''}
 
     <div class="home-card home-dashboard">
-      <div class="home-balance">
-        <div>
-          <div class="label">Cash</div>
-          <div class="amount" data-money="${player.cash}">${formatMoney(player.cash)}</div>
+      <div class="cash-flip-wrap" id="cash-flip-wrap">
+        <div class="cash-flip-inner" id="cash-flip-inner">
+          <div class="cash-flip-face cash-flip-front">
+            <div class="home-balance">
+              <div>
+                <div class="label">Cash</div>
+                <div class="amount" data-money="${player.cash}">${formatMoney(player.cash)}</div>
+              </div>
+              <div class="home-balance-logo">💰</div>
+            </div>
+            <div class="networth-delta ${isGain ? 'gain' : 'loss'}">
+              <span class="delta-arrow">${isGain ? '▲' : '▼'}</span>
+              <span>${isGain ? '+' : '−'}${formatMoney(Math.abs(delta))}</span>
+              <span class="delta-pct">(${isGain ? '+' : '−'}${Math.abs(deltaPct).toFixed(1)}%)</span>
+              <span class="delta-label">this turn</span>
+            </div>
+          </div>
+          <div class="cash-flip-face cash-flip-back">
+            <div class="home-balance">
+              <div>
+                <div class="label">${hasLastTurn ? `Last Turn · Month ${lastTurnMonth}` : 'Last Turn'}</div>
+                <div class="amount">${hasLastTurn ? `${lastTurnIsGain ? '+' : '−'}${formatMoney(Math.abs(lastDelta))}` : '—'}</div>
+              </div>
+              <div class="home-balance-logo">📅</div>
+            </div>
+            ${hasLastTurn ? `
+              <div class="networth-delta ${lastTurnIsGain ? 'gain' : 'loss'}">
+                <span class="delta-arrow">${lastTurnIsGain ? '▲' : '▼'}</span>
+                <span>${lastTurnIsGain ? '+' : '−'}${formatMoney(Math.abs(lastDelta))}</span>
+                <span class="delta-pct">(${lastTurnIsGain ? '+' : '−'}${Math.abs(lastTurnPct).toFixed(1)}%)</span>
+                <span class="delta-label">how you did</span>
+              </div>
+            ` : `
+              <div class="networth-delta">
+                <span class="delta-label">Take your first turn to see how you did</span>
+              </div>
+            `}
+          </div>
         </div>
-        <div class="home-balance-logo">💰</div>
-      </div>
-
-      <div class="networth-delta ${isGain ? 'gain' : 'loss'}">
-        <span class="delta-arrow">${isGain ? '▲' : '▼'}</span>
-        <span>${isGain ? '+' : '−'}${formatMoney(Math.abs(delta))}</span>
-        <span class="delta-pct">(${isGain ? '+' : '−'}${Math.abs(deltaPct).toFixed(1)}%)</span>
-        <span class="delta-label">this turn</span>
+        <div class="cash-flip-dots">
+          <span class="cash-flip-dot"></span>
+          <span class="cash-flip-dot"></span>
+        </div>
+        <div class="cash-flip-hint">‹ Swipe or tap for last turn</div>
       </div>
 
       <div class="home-stats">
@@ -1273,9 +1331,8 @@ function renderHome() {
             <div class="activity-icon">${item.icon || '💬'}</div>
             <div>
               <strong>${item.text}</strong>
-              <small>${item.time || 'now'}</small>
             </div>
-            <div class="time">${item.ago || 'just now'}</div>
+            <div class="time">${formatRelativeTime(item.time)}</div>
           </div>
         `).join('') || '<div class="empty-state">No activity yet.</div>'}
       </div>
@@ -1285,6 +1342,7 @@ function renderHome() {
   const turnButton = home.querySelector('[data-view="turn"]');
   if (turnButton) turnButton.addEventListener('click', () => setView('turn'));
   document.getElementById('home-happiness-card')?.addEventListener('click', openHappinessLog);
+  setupCashCardSwipe();
   document.getElementById('home-happiness-wrap')?.addEventListener('click', openHappinessLog);
   document.getElementById('home-world-event-chip')?.addEventListener('click', () => showWorldEventModal(state.game.worldEvent, false));
   animateMoneyNumbers();
@@ -1359,6 +1417,59 @@ function animateMoneyNumbers() {
 let idleHintTimer = null;
 let pendingTurnBanner = false;
 let lastSpokenTurnIndex = -1;
+// Which face of the Home cash card is showing — reset to the front (current turn) face
+// whenever Home re-renders; toggled by swiping/tapping the card itself.
+let cashCardShowingLastTurn = false;
+
+// Lets the cash card be swiped left (or simply tapped) to flip between "this turn" and
+// "last turn" cash performance, mirroring the drag-to-settle feel used by the turn cards.
+function setupCashCardSwipe() {
+  const wrap = document.getElementById('cash-flip-wrap');
+  const inner = document.getElementById('cash-flip-inner');
+  if (!wrap || !inner) return;
+  const dots = wrap.querySelectorAll('.cash-flip-dot');
+
+  function applyState(animate) {
+    inner.style.transition = animate ? 'transform 320ms cubic-bezier(.2,.8,.2,1)' : 'none';
+    inner.style.transform = cashCardShowingLastTurn ? 'translateX(-50%)' : 'translateX(0%)';
+    dots.forEach((dot, i) => dot.classList.toggle('active', Boolean(i) === cashCardShowingLastTurn));
+  }
+  applyState(false);
+
+  let drag = null;
+  wrap.addEventListener('pointerdown', (event) => {
+    if (!event.isPrimary || event.target.closest('button')) return;
+    drag = { startX: event.clientX, diff: 0, moved: false };
+    try { wrap.setPointerCapture(event.pointerId); } catch { /* unsupported pointer id, drag still works via listeners on the element */ }
+  });
+  wrap.addEventListener('pointermove', (event) => {
+    if (!drag) return;
+    drag.diff = event.clientX - drag.startX;
+    if (Math.abs(drag.diff) > 6) drag.moved = true;
+    const base = cashCardShowingLastTurn ? -50 : 0;
+    const dragPct = (drag.diff / wrap.clientWidth) * 50;
+    inner.style.transition = 'none';
+    inner.style.transform = `translateX(${clamp(base + dragPct, -50, 0)}%)`;
+  });
+  function endDrag(event) {
+    if (!drag) return;
+    const { diff, moved } = drag;
+    drag = null;
+    if (event?.pointerId != null && wrap.hasPointerCapture?.(event.pointerId)) {
+      wrap.releasePointerCapture(event.pointerId);
+    }
+    if (!moved) {
+      cashCardShowingLastTurn = !cashCardShowingLastTurn;
+    } else if (diff < -40) {
+      cashCardShowingLastTurn = true;
+    } else if (diff > 40) {
+      cashCardShowingLastTurn = false;
+    }
+    applyState(true);
+  }
+  wrap.addEventListener('pointerup', endDrag);
+  wrap.addEventListener('pointercancel', endDrag);
+}
 
 function clearIdleHint() {
   if (idleHintTimer) {
@@ -1402,9 +1513,11 @@ function renderTurn() {
         <button class="turn-summary-btn" id="turn-summary-btn" type="button">🔊 Last Turn</button>
       </div>
       <div class="turn-feed" id="turn-feed-root"></div>
+      <button class="agent-fab" id="financial-agent-btn" type="button" aria-label="Ask the financial agent">💬</button>
     </div>
   `;
   document.getElementById('turn-summary-btn')?.addEventListener('click', speakLastTurnSummary);
+  document.getElementById('financial-agent-btn')?.addEventListener('click', openFinancialAgentPanel);
 
   const feedRoot = document.getElementById('turn-feed-root');
   if (!cards.length) {
@@ -1544,7 +1657,7 @@ function advanceWorldEvent() {
         playCashSound(-event.amount, p);
         handleCashShortfall(p);
       });
-      state.game.activity.unshift({ id: uid('act'), text: `Everyone paid ${formatMoney(event.amount)} due to ${event.name}`, icon: event.icon, time: 'now', color: null });
+      state.game.activity.unshift({ id: uid('act'), text: `Everyone paid ${formatMoney(event.amount)} due to ${event.name}`, icon: event.icon, time: Date.now(), color: null });
     }
     event.turnsRemaining -= 1;
     if (event.turnsRemaining <= 0) state.game.worldEvent = null;
@@ -1552,7 +1665,7 @@ function advanceWorldEvent() {
   if (!state.game.worldEvent && state.game.month > 1 && state.game.month % 3 === 1) {
     const newEvent = drawWorldEvent();
     state.game.worldEvent = newEvent;
-    state.game.activity.unshift({ id: uid('act'), text: `BREAKING NEWS: ${newEvent.name}`, icon: newEvent.icon, time: 'now', color: null });
+    state.game.activity.unshift({ id: uid('act'), text: `BREAKING NEWS: ${newEvent.name}`, icon: newEvent.icon, time: Date.now(), color: null });
     if (newEvent.effect === 'flat-cost') {
       state.game.players.forEach((p) => {
         if (p.isBankrupt) return;
@@ -1626,7 +1739,7 @@ function simulateOpponents() {
         playCashSound(rentDue, owner);
         adjustHappiness(owner, 3, `Received rent from ${opponent.name}`);
         const text = `${opponent.name} rolled ${diceRoll} and paid ${formatMoney(rentDue)} rent to ${owner.name}`;
-        state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
+        state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: Date.now(), color: COLORS[opponent.color] });
         log.push({ icon: '💸', text });
         showToast(`${opponent.name.toUpperCase()} ROLLED ${diceRoll} • PAID RENT TO ${owner.name.toUpperCase()}`);
         handleCashShortfall(opponent);
@@ -1646,7 +1759,7 @@ function simulateOpponents() {
         availableProperties.splice(availableProperties.indexOf(choice), 1);
         adjustHappiness(opponent, 2, `Invested in ${choice.name}`);
         const text = `${opponent.name} rolled ${diceRoll} and bought ${choice.name} for ${formatMoney(choice.purchasePrice)}`;
-        state.game.activity.unshift({ id: uid('act'), text, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
+        state.game.activity.unshift({ id: uid('act'), text, icon: '🏠', time: Date.now(), color: COLORS[opponent.color] });
         log.push({ icon: '🏠', text });
         showToast(`${opponent.name.toUpperCase()} BOUGHT ${choice.name.toUpperCase()}`);
         return;
@@ -1660,13 +1773,13 @@ function simulateOpponents() {
       opponent.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
       adjustHappiness(opponent, asset.popularity, `Bought ${asset.name}`);
       const text = `${opponent.name} rolled ${diceRoll} and bought ${asset.name}`;
-      state.game.activity.unshift({ id: uid('act'), text, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
+      state.game.activity.unshift({ id: uid('act'), text, icon: '🛍️', time: Date.now(), color: COLORS[opponent.color] });
       log.push({ icon: '🛍️', text });
       showToast(`${opponent.name.toUpperCase()} BOUGHT ${asset.name.toUpperCase()}`);
     } else {
       const text = `${opponent.name} rolled ${diceRoll} and sat this month out`;
       adjustHappiness(opponent, -8, 'Sat out this month');
-      state.game.activity.unshift({ id: uid('act'), text, icon: '💤', time: 'now', color: COLORS[opponent.color] });
+      state.game.activity.unshift({ id: uid('act'), text, icon: '💤', time: Date.now(), color: COLORS[opponent.color] });
       log.push({ icon: '💤', text });
       showToast(`${opponent.name.toUpperCase()} SAT THIS MONTH OUT`);
     }
@@ -1677,6 +1790,250 @@ function simulateOpponents() {
   saveState();
 }
 
+// ---------------------------------------------------------------------------
+// Financial Agent — gives the human player on-demand advice about the card
+// they're currently looking at, and can optionally take over and play out the
+// rest of the turn using the same reasoning, logging why it made each call.
+// ---------------------------------------------------------------------------
+
+// Shared decision logic used both for advice text and for the agent's autopilot.
+function decidePropertyPurchase(property, player) {
+  if (player.cash < property.purchasePrice) {
+    return { buy: false, reason: "you can't afford it right now" };
+  }
+  const remainingAfter = player.cash - property.purchasePrice;
+  const safeBuffer = player.cash * 0.25;
+  if (remainingAfter < safeBuffer && remainingAfter < 500) {
+    return { buy: false, reason: 'buying it would leave your cash reserve too thin' };
+  }
+  if (property.yield >= 5.5) {
+    return { buy: true, reason: `a strong ${property.yield}% yield for the price` };
+  }
+  if (remainingAfter > property.purchasePrice) {
+    return { buy: true, reason: 'you have plenty of spare cash to invest' };
+  }
+  if (property.risk === 'Low') {
+    return { buy: true, reason: 'low risk and comfortably affordable' };
+  }
+  return { buy: false, reason: 'the yield is modest — better to keep cash in reserve for now' };
+}
+
+function decideImpulseBuy(asset, player) {
+  if (player.cash < asset.price) {
+    return { buy: false, reason: "you can't afford it right now" };
+  }
+  const spareAfter = player.cash - asset.price;
+  const lossOnResale = asset.price - asset.resale;
+  if (player.happiness < 0 && spareAfter > asset.price * 2) {
+    return { buy: true, reason: 'your happiness is low and you can easily afford the mood boost' };
+  }
+  if (spareAfter < asset.price) {
+    return { buy: false, reason: `it would eat too much cash for a guaranteed ${formatMoney(lossOnResale)} loss on resale` };
+  }
+  return { buy: false, reason: 'it depreciates fast — better to save or invest in property instead' };
+}
+
+// Plain-language, single-card advice shown in the agent's speech bubble.
+function getFinancialAdvice(player) {
+  const card = (state.turnDeckCards || [])[state.game.turnIndex || 0];
+  if (!card) return "You're all caught up — there's nothing left to decide this month!";
+  if (card.type === 'property') {
+    const property = getPropertyById(card.propertyId);
+    if (!property || property.ownerId) return 'This one is already gone — swipe up to move on.';
+    const decision = decidePropertyPurchase(property, player);
+    return decision.buy
+      ? `I'd buy ${property.name} for ${formatMoney(property.purchasePrice)} — ${decision.reason}.`
+      : `I'd skip ${property.name} — ${decision.reason}.`;
+  }
+  if (card.type === 'dice') {
+    return card.rolled
+      ? 'Dice already rolled — swipe up to continue.'
+      : "No decision to make here — just roll! Odd means you'll owe rent to a random property owner, even gets you a bonus.";
+  }
+  if (card.type === 'impulse') {
+    const asset = card.impulseAsset;
+    if (!asset) return 'Nothing to decide yet — take a look at the card above.';
+    const decision = decideImpulseBuy(asset, player);
+    return decision.buy
+      ? `I'd buy ${asset.name} for ${formatMoney(asset.price)} — ${decision.reason}.`
+      : `I'd skip ${asset.name} — ${decision.reason}.`;
+  }
+  if (card.type === 'chance') {
+    return 'This is a Chance card — its effect happens automatically once you tap Continue, so there is nothing to decide.';
+  }
+  return "You're all caught up — there's nothing left to decide this month!";
+}
+
+// Resolves one turn card exactly the way the agent would (no DOM/animation), returning a
+// {icon, text} log entry describing what it did and why, or null if there was nothing to do.
+function resolveCardForAgent(card, player) {
+  if (card.type === 'property') {
+    const property = getPropertyById(card.propertyId);
+    if (!property || property.ownerId) return null;
+    const decision = decidePropertyPurchase(property, player);
+    if (decision.buy) {
+      player.cash -= property.purchasePrice;
+      property.ownerId = player.id;
+      player.properties.push(property.id);
+      player.tookActionThisTurn = true;
+      playInvestSound(player);
+      adjustHappiness(player, 2, `Invested in ${property.name}`);
+      state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: Date.now(), color: COLORS[player.color] });
+      return { icon: '🏠', text: `Bought ${property.name} for ${formatMoney(property.purchasePrice)} — ${decision.reason}.` };
+    }
+    return { icon: '⏭️', text: `Skipped ${property.name} — ${decision.reason}.` };
+  }
+
+  if (card.type === 'dice') {
+    if (card.rolled) return null;
+    card.rolled = true;
+    const roll = 1 + ((Math.random() * 6) | 0);
+    state.game.lastRoll = roll;
+    if (roll % 2 === 1) {
+      const candidates = state.game.players.filter((opponent) => opponent.id !== player.id && (opponent.properties || []).length > 0);
+      const owner = candidates[(Math.random() * candidates.length) | 0] || null;
+      const ownedProperties = owner ? owner.properties.map((id) => getPropertyById(id)).filter(Boolean) : [];
+      const property = ownedProperties[(Math.random() * ownedProperties.length) | 0] || null;
+      if (owner && property) {
+        const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
+        player.cash -= rentDue;
+        owner.cash += rentDue;
+        owner.receivedRentThisTurn = true;
+        playCashSound(-rentDue, player);
+        playCashSound(rentDue, owner);
+        adjustHappiness(owner, 3, `Received rent from ${player.name}`);
+        state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: Date.now(), color: COLORS[player.color] });
+        handleCashShortfall(player);
+        return { icon: '🎲', text: `Rolled ${roll} (odd) — paid ${formatMoney(rentDue)} rent to ${owner.name}.` };
+      }
+      return { icon: '🎲', text: `Rolled ${roll} (odd) — no one owned a property yet, so no rent was due.` };
+    }
+    pushBonusProperties();
+    return { icon: '🎲', text: `Rolled ${roll} (even) — chose to preview 2 bonus properties (no downside risk).` };
+  }
+
+  if (card.type === 'impulse') {
+    const asset = card.impulseAsset || (card.impulseAsset = createImpulseAssets()[(Math.random() * 8) | 0]);
+    const decision = decideImpulseBuy(asset, player);
+    if (decision.buy) {
+      player.cash -= asset.price;
+      player.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
+      player.tookActionThisTurn = true;
+      playInvestSound(player);
+      adjustHappiness(player, asset.popularity, `Bought ${asset.name}`);
+      state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: Date.now(), color: COLORS[player.color] });
+      return { icon: '🛍️', text: `Bought ${asset.name} for ${formatMoney(asset.price)} — ${decision.reason}.` };
+    }
+    return { icon: '⏭️', text: `Skipped ${asset.name} — ${decision.reason}.` };
+  }
+
+  if (card.type === 'chance') {
+    const chance = card.chanceCard;
+    if (!chance) return null;
+    if (card.fromDiceRoll && isNegativeChanceCard(chance)) {
+      const others = state.game.players.filter((opponent) => opponent.id !== player.id);
+      others.forEach((opponent) => applyChanceEffect(chance, opponent));
+      return { icon: '🎴', text: `${chance.name} triggered — everyone else took the hit instead of you.` };
+    }
+    applyChanceEffect(chance, player);
+    return { icon: '🎴', text: `Drew ${chance.name} — ${chance.description}` };
+  }
+
+  return null;
+}
+
+// Plays out every remaining card in the human's current turn deck using the agent's own
+// buy/skip reasoning, then shows a summary of exactly what it did and why.
+function simulateMyTurn() {
+  const player = getCurrentPlayer();
+  if (!player || !player.isHuman || state.game.turnCompleted) return;
+  const log = [];
+  let i = state.game.turnIndex || 0;
+  let guard = 0;
+  while (i < state.turnDeckCards.length && guard < 60) {
+    guard += 1;
+    const entry = resolveCardForAgent(state.turnDeckCards[i], player);
+    if (entry) log.push(entry);
+    i += 1;
+  }
+  state.game.turnIndex = i;
+  state.game.turnCompleted = true;
+  saveState();
+  renderAll();
+  // If the agent's own decisions bankrupted the player, renderAll() already put up the
+  // bankruptcy modal — don't clobber it with the (now moot) turn summary.
+  if (player.isBankrupt) return;
+  showAgentTurnSummary(log);
+}
+
+function getFinancialAgentModalRoot() {
+  return document.getElementById('modal-root');
+}
+
+function closeFinancialAgentPanel() {
+  const root = getFinancialAgentModalRoot();
+  if (root) root.innerHTML = '';
+}
+
+// Opens the speech-bubble advice panel for the card currently on screen, with an option
+// to hand the rest of the turn over to the agent entirely.
+function openFinancialAgentPanel() {
+  const player = getCurrentPlayer();
+  if (!player) return;
+  const advice = getFinancialAdvice(player);
+  const modal = `
+    <div class="modal-backdrop" id="agent-modal-backdrop">
+      <div class="modal-card">
+        <div class="top"><strong>💡 Financial Agent</strong><button type="button" class="ghost-btn" data-close-modal="true">Close</button></div>
+        <div class="modal-body">
+          <div class="agent-speech-bubble">
+            <span class="agent-avatar">🤖</span>
+            <p>${advice}</p>
+          </div>
+          <button class="primary-btn" id="agent-simulate-btn" style="margin-top:16px;">🤖 Simulate My Turn For Me</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const root = getFinancialAgentModalRoot();
+  root.innerHTML = modal;
+  root.querySelector('[data-close-modal]')?.addEventListener('click', closeFinancialAgentPanel);
+  document.getElementById('agent-modal-backdrop')?.addEventListener('click', (event) => {
+    if (event.target.id === 'agent-modal-backdrop') closeFinancialAgentPanel();
+  });
+  document.getElementById('agent-simulate-btn')?.addEventListener('click', () => {
+    closeFinancialAgentPanel();
+    simulateMyTurn();
+  });
+}
+
+// Shows exactly what the agent did across the rest of the turn, and why, reusing the same
+// sim-log visual style as the opponents' turn recap.
+function showAgentTurnSummary(log) {
+  const modal = `
+    <div class="modal-backdrop" id="agent-summary-backdrop">
+      <div class="modal-card">
+        <div class="top"><strong>🤖 Here's what I did</strong><button type="button" class="ghost-btn" data-close-modal="true">Done</button></div>
+        <div class="modal-body">
+          <div class="sim-log">
+            ${log.length ? log.map((entry) => `
+              <div class="sim-log-item sim-log-visible">
+                <div class="sim-log-icon">${entry.icon}</div>
+                <div class="sim-log-text">${entry.text}</div>
+              </div>
+            `).join('') : '<div class="empty-state">Nothing left to decide — you were already done!</div>'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  const root = getFinancialAgentModalRoot();
+  root.innerHTML = modal;
+  root.querySelector('[data-close-modal]')?.addEventListener('click', () => {
+    root.innerHTML = '';
+    renderAll();
+  });
+}
 
 function renderTurnCardMarkup(card, currentPlayer, index, total) {
   if (card.type === 'property') {
@@ -1737,7 +2094,7 @@ function renderTurnCardMarkup(card, currentPlayer, index, total) {
   }
 
   if (card.type === 'impulse') {
-    const asset = createImpulseAssets()[(Math.random() * 8) | 0];
+    const asset = card.impulseAsset || (card.impulseAsset = createImpulseAssets()[(Math.random() * 8) | 0]);
     return `
       <div class="card-color-band impulse-band">
         <div class="type-tag"><span class="type-icon">🛍️</span><span>Impulse Buy</span></div>
@@ -1985,7 +2342,7 @@ function buyPropertyFromTurn(propertyId) {
   playInvestSound(player);
   adjustHappiness(player, 2, `Invested in ${property.name}`);
   state.game.activity.unshift({
-    id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: 'now', color: COLORS[player.color]
+    id: uid('act'), text: `${player.name} bought ${property.name}`, icon: '🏠', time: Date.now(), color: COLORS[player.color]
   });
   showToast(`PROPERTY ACQUIRED`);
   haptic('medium');
@@ -2009,7 +2366,7 @@ function buyImpulseAsset(assetId) {
   player.tookActionThisTurn = true;
   playInvestSound(player);
   adjustHappiness(player, asset.popularity, `Bought ${asset.name}`);
-  state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: 'now', color: COLORS[player.color] });
+  state.game.activity.unshift({ id: uid('act'), text: `${player.name} bought ${asset.name}`, icon: '🛍️', time: Date.now(), color: COLORS[player.color] });
   showToast(`HAPPINESS +${asset.popularity}%`);
   haptic('soft');
   saveState();
@@ -2038,7 +2395,7 @@ function resolveDiceRoll(card) {
       playCashSound(-rentDue, player);
       playCashSound(rentDue, owner);
       adjustHappiness(owner, 3, `Received rent from ${player.name}`);
-      state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: 'now', color: COLORS[player.color] });
+      state.game.activity.unshift({ id: uid('act'), text: `${player.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`, icon: '💸', time: Date.now(), color: COLORS[player.color] });
       showToast(`YOU ROLLED ${roll} • RENT!`);
       handleCashShortfall(player);
       saveState();
@@ -2102,7 +2459,7 @@ function applyChanceEffect(card, player) {
     });
     showToast('Community Regeneration');
   }
-  state.game.activity.unshift({ id: uid('act'), text: `${player.name} drew ${card.name}`, icon: '🎴', time: 'now', color: COLORS[player.color] });
+  state.game.activity.unshift({ id: uid('act'), text: `${player.name} drew ${card.name}`, icon: '🎴', time: Date.now(), color: COLORS[player.color] });
 }
 
 // Inserts a real, swipeable Chance card into the deck instead of resolving it instantly.
@@ -2137,7 +2494,9 @@ function resolveChanceCard(index) {
   setTimeout(() => advanceTurnCard(), 220);
 }
 
-function appendBonusProperties() {
+// Pure state mutation (no save/render) so the financial agent's headless "simulate my turn"
+// loop can trigger the same bonus-properties branch without touching the DOM mid-loop.
+function pushBonusProperties() {
   const propertyPool = state.game.properties.filter((property) => property.ownerId === null);
   for (let i = 0; i < 2; i++) {
     const property = pickWeightedProperty(propertyPool);
@@ -2147,6 +2506,10 @@ function appendBonusProperties() {
     }
   }
   state.game.turnIndex = Math.min((state.game.turnIndex || 0), (state.turnDeckCards.length || 1) - 1);
+}
+
+function appendBonusProperties() {
+  pushBonusProperties();
   saveState();
   renderTurn();
 }
@@ -2277,7 +2640,7 @@ function upgradeProperty(propertyId) {
   playInvestSound(player);
   adjustHappiness(player, 3, `Upgraded ${property.name}`);
   const label = property.upgradeLevel >= MAX_UPGRADE_LEVEL ? 'a Hotel' : `Level ${property.upgradeLevel}`;
-  state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: 'now', color: COLORS[player.color] });
+  state.game.activity.unshift({ id: uid('act'), text: `${player.name} upgraded ${property.name} to ${label}`, icon: '🏗️', time: Date.now(), color: COLORS[player.color] });
   showToast(`UPGRADED TO ${label.toUpperCase()}`);
   haptic('medium');
   saveState();
@@ -2365,7 +2728,7 @@ function sellProperty(propertyId) {
   property.ownerId = null;
   player.properties = player.properties.filter((id) => id !== propertyId);
   playCashSound(saleValue, player);
-  state.game.activity.unshift({ id: uid('act'), text: `${player.name} sold ${property.name} for ${formatMoney(saleValue)}`, icon: '💼', time: 'now', color: COLORS[player.color] });
+  state.game.activity.unshift({ id: uid('act'), text: `${player.name} sold ${property.name} for ${formatMoney(saleValue)}`, icon: '💼', time: Date.now(), color: COLORS[player.color] });
   showToast(`Sold ${property.name}`);
   haptic('soft');
   saveState();
@@ -2383,7 +2746,7 @@ function handleCashShortfall(player) {
     player.impulseAssets = player.impulseAssets.filter((item) => item.id !== asset.id);
     const saleValue = Math.round(asset.currentValue * 0.6);
     player.cash += saleValue;
-    state.game.activity.unshift({ id: uid('act'), text: `${player.name} fire-sold ${asset.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: 'now', color: COLORS[player.color] });
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} fire-sold ${asset.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: Date.now(), color: COLORS[player.color] });
   }
 
   while (player.cash < 0 && player.properties.length) {
@@ -2398,12 +2761,12 @@ function handleCashShortfall(player) {
     player.cash += saleValue;
     property.ownerId = null;
     player.properties = player.properties.filter((id) => id !== propertyId);
-    state.game.activity.unshift({ id: uid('act'), text: `${player.name} force-sold ${property.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: 'now', color: COLORS[player.color] });
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} force-sold ${property.name} for ${formatMoney(saleValue)} to cover debts`, icon: '🔥', time: Date.now(), color: COLORS[player.color] });
   }
 
   if (player.cash < 0) {
     player.isBankrupt = true;
-    state.game.activity.unshift({ id: uid('act'), text: `${player.name} has gone BANKRUPT!`, icon: '💀', time: 'now', color: COLORS[player.color] });
+    state.game.activity.unshift({ id: uid('act'), text: `${player.name} has gone BANKRUPT!`, icon: '💀', time: Date.now(), color: COLORS[player.color] });
     if (player.isHuman) {
       playSound('bankrupt');
       showBankruptcyModal(player);
