@@ -762,7 +762,10 @@ button:hover { transform: translateY(-1px); }
 }
 .turn-summary-btn:active { transform: scale(0.97); }
 .agent-fab {
-  position: fixed; right: 16px; bottom: calc(var(--nav-height) + 20px); z-index: 400;
+  /* Same "stay inside the phone frame" trick as .bottom-nav: on screens wider than the
+     430px app frame, a plain `right: 16px` would sit 16px from the real (far-off) browser
+     edge instead of the visible frame's edge. */
+  position: fixed; right: max(16px, calc((100vw - 430px) / 2 + 16px)); bottom: calc(var(--nav-height) + 20px); z-index: 400;
   width: 54px; height: 54px; border-radius: 50%; border: none;
   background: linear-gradient(135deg, #8a7dff, #4db6ff);
   color: white; font-size: 1.4rem; display: grid; place-items: center;
@@ -1193,7 +1196,9 @@ button:hover { transform: translateY(-1px); }
 .leaderboard-item strong { font-size:1.1rem; }
 
 #toast-container {
-  position: fixed; right: 14px; bottom: calc(var(--nav-height) + 14px); display:flex; flex-direction:column; gap:8px; z-index:1000;
+  /* Same fix as .agent-fab — keep toasts pinned to the visible phone frame's edge, not the
+     real browser viewport edge, on screens wider than the 430px app frame. */
+  position: fixed; right: max(14px, calc((100vw - 430px) / 2 + 14px)); bottom: calc(var(--nav-height) + 14px); display:flex; flex-direction:column; gap:8px; z-index:1000;
 }
 .toast {
   background: rgba(9,16,25,0.95); border:1px solid rgba(var(--tint-rgb),0.08); color: white; padding: 10px 12px; border-radius: 12px; box-shadow: var(--shadow); opacity:0; transform:translateY(8px); animation: toastIn 220ms ease forwards;
