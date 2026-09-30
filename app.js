@@ -321,6 +321,7 @@ function buildDefaultGame(profile) {
     happiness: 20,
     happinessLog: [],
     tookActionThisTurn: false,
+    receivedRentThisTurn: false,
     properties: [],
     impulseAssets: [],
     savedCards: [],
@@ -349,6 +350,8 @@ function buildDefaultGame(profile) {
       cash: 5000,
       happiness: 20 + (Math.random() * 10),
       happinessLog: [],
+      tookActionThisTurn: false,
+      receivedRentThisTurn: false,
       properties: [],
       impulseAssets: [],
       savedCards: [],
@@ -1574,12 +1577,15 @@ function handleYourTurnClick() {
     p.netWorthAtMonthStart = netWorth;
   });
 
-  // Happiness dips if you went a whole month without buying, investing, or upgrading anything.
+  // Happiness dips if you went a whole month without buying, investing, or upgrading anything —
+  // UNLESS someone paid you rent this month, since that's still a happy landlord moment (it
+  // already gave its own +happiness/"yay" the instant it was paid, so we just skip the dip
+  // here rather than layering a sad sound on top of a good month).
   const human = state.game.players.find((p) => p.isHuman);
-  if (human && !human.tookActionThisTurn) {
+  if (human && !human.tookActionThisTurn && !human.receivedRentThisTurn) {
     adjustHappiness(human, -8, 'No investment activity this month');
   }
-  state.game.players.forEach((p) => { p.tookActionThisTurn = false; });
+  state.game.players.forEach((p) => { p.tookActionThisTurn = false; p.receivedRentThisTurn = false; });
 
   state.game.month += 1;
   advanceWorldEvent();
@@ -1596,16 +1602,41 @@ function handleYourTurnClick() {
 }
 
 // Gives each AI opponent one simple action for the round and narrates it via a persistent
-// log (shown until the player taps "Your Turn!") as well as toasts/activity.
+// log (shown until the player taps "Your Turn!") as well as toasts/activity. Rolls an actual
+// d6 for each opponent so they follow the exact same odd/even dice rule as the human: odd
+// means they owe rent to a random owner of a random property; even means they invest instead.
 function simulateOpponents() {
   const opponents = state.game.players.filter((player) => !player.isHuman && !player.isBankrupt);
   const availableProperties = state.game.properties.filter((property) => property.ownerId === null);
   const log = [];
 
   opponents.forEach((opponent) => {
-    const roll = Math.random();
+    const diceRoll = 1 + ((Math.random() * 6) | 0);
 
-    if (roll < 0.45 && availableProperties.length) {
+    if (diceRoll % 2 === 1) {
+      const owners = state.game.players.filter((player) => player.id !== opponent.id && (player.properties || []).length);
+      const owner = owners[(Math.random() * owners.length) | 0];
+      const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
+      const property = ownedProperties[(Math.random() * ownedProperties.length) | 0];
+      if (owner && property) {
+        const rentDue = Math.round(getEffectiveRent(property) * (diceRoll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
+        opponent.cash -= rentDue;
+        owner.cash += rentDue;
+        owner.receivedRentThisTurn = true;
+        playCashSound(rentDue, owner);
+        adjustHappiness(owner, 3, `Received rent from ${opponent.name}`);
+        const text = `${opponent.name} rolled ${diceRoll} and paid ${formatMoney(rentDue)} rent to ${owner.name}`;
+        state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
+        log.push({ icon: '💸', text });
+        showToast(`${opponent.name.toUpperCase()} ROLLED ${diceRoll} • PAID RENT TO ${owner.name.toUpperCase()}`);
+        handleCashShortfall(opponent);
+        return;
+      }
+      // Odd roll but nobody owns anything yet — fall through to investing below, same as
+      // the human's dice mechanic when there's no one to pay.
+    }
+
+    if (availableProperties.length && Math.random() < 0.55) {
       const affordable = availableProperties.filter((property) => property.purchasePrice <= opponent.cash * 0.85);
       const choice = affordable[(Math.random() * affordable.length) | 0];
       if (choice) {
@@ -1614,30 +1645,10 @@ function simulateOpponents() {
         opponent.properties.push(choice.id);
         availableProperties.splice(availableProperties.indexOf(choice), 1);
         adjustHappiness(opponent, 2, `Invested in ${choice.name}`);
-        const text = `${opponent.name} bought ${choice.name} for ${formatMoney(choice.purchasePrice)}`;
+        const text = `${opponent.name} rolled ${diceRoll} and bought ${choice.name} for ${formatMoney(choice.purchasePrice)}`;
         state.game.activity.unshift({ id: uid('act'), text, icon: '🏠', time: 'now', color: COLORS[opponent.color] });
         log.push({ icon: '🏠', text });
         showToast(`${opponent.name.toUpperCase()} BOUGHT ${choice.name.toUpperCase()}`);
-        return;
-      }
-    }
-
-    if (roll < 0.8) {
-      const owners = state.game.players.filter((player) => player.id !== opponent.id && (player.properties || []).length);
-      const owner = owners[(Math.random() * owners.length) | 0];
-      const ownedProperties = owner ? owner.properties.map((propertyId) => getPropertyById(propertyId)).filter(Boolean) : [];
-      const property = ownedProperties[(Math.random() * ownedProperties.length) | 0];
-      if (owner && property) {
-        const rentDue = Math.round(getEffectiveRent(property) * (0.9 + Math.random() * 0.3) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
-        opponent.cash -= rentDue;
-        owner.cash += rentDue;
-        playCashSound(rentDue, owner);
-        adjustHappiness(owner, 3, `Received rent from ${opponent.name}`);
-        const text = `${opponent.name} paid ${formatMoney(rentDue)} rent to ${owner.name}`;
-        state.game.activity.unshift({ id: uid('act'), text, icon: '💸', time: 'now', color: COLORS[opponent.color] });
-        log.push({ icon: '💸', text });
-        showToast(`${opponent.name.toUpperCase()} PAID RENT TO ${owner.name.toUpperCase()}`);
-        handleCashShortfall(opponent);
         return;
       }
     }
@@ -1648,12 +1659,12 @@ function simulateOpponents() {
       opponent.cash -= asset.price;
       opponent.impulseAssets.push({ ...asset, currentValue: asset.resale, id: uid('impulse') });
       adjustHappiness(opponent, asset.popularity, `Bought ${asset.name}`);
-      const text = `${opponent.name} bought ${asset.name}`;
+      const text = `${opponent.name} rolled ${diceRoll} and bought ${asset.name}`;
       state.game.activity.unshift({ id: uid('act'), text, icon: '🛍️', time: 'now', color: COLORS[opponent.color] });
       log.push({ icon: '🛍️', text });
       showToast(`${opponent.name.toUpperCase()} BOUGHT ${asset.name.toUpperCase()}`);
     } else {
-      const text = `${opponent.name} sat this month out`;
+      const text = `${opponent.name} rolled ${diceRoll} and sat this month out`;
       adjustHappiness(opponent, -8, 'Sat out this month');
       state.game.activity.unshift({ id: uid('act'), text, icon: '💤', time: 'now', color: COLORS[opponent.color] });
       log.push({ icon: '💤', text });
@@ -2023,6 +2034,7 @@ function resolveDiceRoll(card) {
       const rentDue = Math.round(getEffectiveRent(property) * (roll > 3 ? 1.15 : 1) * getHappinessRentMultiplier(owner) * getWorldEventRentMultiplier());
       player.cash -= rentDue;
       owner.cash += rentDue;
+      owner.receivedRentThisTurn = true;
       playCashSound(-rentDue, player);
       playCashSound(rentDue, owner);
       adjustHappiness(owner, 3, `Received rent from ${player.name}`);
